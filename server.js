@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TRACKS, DRIVERS, TEAMS, getTrack } from './public/shared/tracks.js';
-import { trackFor, gridCar, aiInput, stepCar, separate, driverOf } from './public/shared/sim.js';
+import { trackFor, gridCar, aiInput, stepCar, separate, driverOf, pitGeometry, COMPOUNDS } from './public/shared/sim.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -100,7 +100,7 @@ function lobbyPayload(room) {
     aiSkill: room.aiSkill,
     hostId: room.hostId,
     players: [...room.players.values()].filter(p => !p.bot).map(p => ({
-      pid: p.pid, name: p.name, driverId: p.driverId, ready: p.ready, ctrl: !!p.hasCtrl
+      pid: p.pid, name: p.name, driverId: p.driverId, ready: p.ready, ctrl: !!p.hasCtrl, tyre: p.tyre || 'medium'
     }))
   };
 }
@@ -120,8 +120,9 @@ function pushLobby(room) { broadcast(room, lobbyPayload(room)); }
 function resetGrid(room) {
   const built = room.built = trackFor(room.trackId);
   [...room.players.values()].forEach((p, i) => {
-    p.car = gridCar(built, i);
-    p.input = { s: 0, g: 0, b: 0 };
+    p.car = gridCar(built, i, p.tyre || 'medium');
+    p.car.pitTyre = p.pitTyre || 'medium';
+    p.input = { s: 0, g: 0, b: 0, pit: 0 };
   });
 }
 
@@ -137,14 +138,32 @@ function recover(room, p) {
 
 function tickCar(room, p, dt) {
   const drv = driverOf(p.driverId);
-  const input = p.bot ? aiInput(room.built, p.car, drv, room.raceTime, p.seed, room.aiSkill) : p.input;
+  let input;
+  if (p.bot) {
+    input = aiInput(room.built, p.car, drv, room.raceTime, p.seed, room.aiSkill);
+  } else {
+    input = { ...p.input, pit: p.pitRequest ? 1 : 0 };
+    p.pitRequest = false;
+  }
   // anyone parked against a barrier gets rejoined automatically
-  if (!p.car.finished && Math.abs(p.car.v) < 3 && room.raceTime > 3) {
+  const wedged = Math.abs(p.car.v) < 9 && (p.car.off || room.raceTime - p.car.hit < 1.5);
+  if (!p.car.finished && (Math.abs(p.car.v) < 3 || wedged) && room.raceTime > 3) {
     p.car.stuck = (p.car.stuck || 0) + dt;
     if (p.car.stuck > 6) recover(room, p);
   } else p.car.stuck = 0;
 
-  stepCar(room.built, p.car, input, drv, dt, room.raceTime, (lap) => {
+  stepCar(room.built, p.car, input, drv, dt, room.raceTime, (kind, data) => {
+    if (kind === 'sector' && !p.bot) {
+      send(p.ws, { t: 'sector', i: data.index, time: data.time, pb: data.pb });
+    }
+    if (kind === 'crash' && !p.bot) {
+      send(p.ws, { t: 'crash', closing: data.closing, damage: data.damage });
+    }
+    if (kind === 'pit' && !p.bot) {
+      send(p.ws, { t: 'pitstate', state: data.state, tyre: data.tyre || p.car.tyre });
+    }
+    if (kind !== 'lap') return;
+    const lap = data.lap;
     if (lap > room.laps && !p.car.finished) {
       p.car.finished = true;
       p.car.finishT = room.raceTime;
@@ -179,6 +198,8 @@ function snapshot(room) {
       x: +p.car.x.toFixed(2), z: +p.car.z.toFixed(2), h: +p.car.h.toFixed(3),
       v: +p.car.v.toFixed(1), lap: Math.max(0, p.car.lap), pos: posOf.get(p.pid),
       off: p.car.off, fin: p.car.finished, best: p.car.best, q: p.seq || 0,
+      ty: p.car.tyre, w: +p.car.wear.toFixed(3), dmg: +p.car.damage.toFixed(3), st: p.car.stops || 0,
+      pit: p.car.pit, ret: p.car.retired, yaw: +(p.car.yaw || 0).toFixed(3),
       hint: p.car.hint, pd: +p.car.prevDist.toFixed(2), pr: +p.car.progress.toFixed(1),
       in: p.bot ? undefined : { s: +(p.input.s || 0).toFixed(2), g: p.input.g || 0, b: p.input.b || 0 },
       cur: +Math.max(0, room.raceTime - p.car.lapStart).toFixed(2)
@@ -208,9 +229,9 @@ setInterval(() => {
       } else if (room.state === 'racing') {
         room.raceTime += TICK;
         for (const p of room.players.values()) if (p.car) tickCar(room, p, TICK);
-        separate([...room.players.values()].map(p => p.car).filter(Boolean));
+        separate([...room.players.values()].map(p => p.car).filter(Boolean), TICK);
         const humans = [...room.players.values()].filter(p => !p.bot);
-        const allDone = humans.length > 0 && humans.every(p => p.car.finished);
+        const allDone = humans.length > 0 && humans.every(p => p.car.finished || p.car.retired);
         const firstDone = room.results.length > 0;
         // once the leader is home the rest get a fixed window to finish
         room.endsAt = firstDone ? room.results[0].time + GRACE : 0;
@@ -230,11 +251,22 @@ setInterval(() => {
 
 function endRace(room) {
   room.state = 'results';
+  const already = new Set(room.results.map(r => r.pid));
   for (const p of room.players.values()) {
-    if (p.car && !p.car.finished) {
-      room.results.push({ pid: p.pid, name: p.name, bot: p.bot, driverId: p.driverId, time: null, best: p.car.best, laps: Math.max(0, p.car.lap) });
+    if (p.car && !p.car.finished && !already.has(p.pid)) {
+      room.results.push({ pid: p.pid, name: p.name, bot: p.bot, driverId: p.driverId, time: null,
+                          best: p.car.best, laps: Math.max(0, p.car.lap), progress: p.car.progress });
     }
   }
+  // Classification: finishers by time, then whoever got furthest, retirements
+  // last. Results are appended as they happen, so a retirement early in the
+  // race would otherwise sit at the top of the sheet.
+  room.results.sort((a, b) => {
+    if ((a.time != null) !== (b.time != null)) return a.time != null ? -1 : 1;
+    if (a.time != null) return a.time - b.time;
+    if (!!a.retired !== !!b.retired) return a.retired ? 1 : -1;
+    return (b.progress || 0) - (a.progress || 0);
+  });
   broadcast(room, { t: 'results', results: room.results, trackId: room.trackId });
   for (const p of [...room.players.values()]) if (p.bot) room.players.delete(p.pid);
 }
@@ -252,6 +284,7 @@ function startRace(room) {
   room.startAt = Date.now() + 5000;
   broadcast(room, {
     t: 'countdown', at: room.startAt, laps: room.laps, trackId: room.trackId,
+    pit: pitGeometry(room.built),
     grid: [...room.players.values()].map(p => ({ id: p.pid, n: p.name, d: p.driverId, bot: p.bot }))
   });
 }
@@ -314,6 +347,10 @@ wss.on('connection', (ws) => {
       case 'in': {
         if (!player) return;
         player.input = { s: m.s || 0, g: m.g || 0, b: m.b || 0 };
+        // A pit request is a one-shot event arriving on a stream of state
+        // messages: latch it, or the next input frame overwrites it before the
+        // physics tick ever sees it.
+        if (m.p) player.pitRequest = true;
         if (m.q !== undefined) player.seq = m.q;
         break;
       }
@@ -354,6 +391,27 @@ wss.on('connection', (ws) => {
         room.state = 'lobby';
         for (const p of room.players.values()) { p.ready = false; p.car = null; }
         pushLobby(room);
+        break;
+      }
+      case 'retire': {
+        if (!room || !player || !player.car) return;
+        player.car.retired = true;
+        player.car.finished = true;
+        if (!room.results.some(r => r.pid === player.pid)) {
+          room.results.push({ pid: player.pid, name: player.name, bot: false, driverId: player.driverId,
+                              time: null, best: player.car.best, laps: Math.max(0, player.car.lap),
+                              progress: player.car.progress, retired: true });
+        }
+        broadcast(room, { t: 'retired', pid: player.pid, name: player.name });
+        send(player.ws, { t: 'results', results: room.results, trackId: room.trackId });
+        break;
+      }
+      case 'tyre': {
+        if (!room || !player) return;
+        const ok = COMPOUNDS.some(c => c.id === m.id);
+        if (!ok) return;
+        if (room.state === 'lobby') { player.tyre = m.id; player.pitTyre = m.id; pushLobby(room); }
+        else if (player.car) { player.pitTyre = m.id; player.car.pitTyre = m.id; }  // next stop
         break;
       }
       case 'recover': {

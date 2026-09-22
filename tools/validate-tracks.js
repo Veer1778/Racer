@@ -1,4 +1,4 @@
-import { TRACKS, buildTrack } from '../public/shared/tracks.js';
+import { TRACKS, buildTrack, project, maxOffset, noRoom } from '../public/shared/tracks.js';
 
 let bad = 0;
 for (const t of TRACKS) {
@@ -26,11 +26,32 @@ for (const t of TRACKS) {
     const arc = (c.dist - a.dist + L) % L;
     if (Math.abs(dh) > 1e-4) minR = Math.min(minR, arc / Math.abs(dh));
   }
+  // Does any barrier vertex end up ON the track? That is what happens when an
+  // offset wider than the corner radius folds the polyline through itself, and
+  // it is what made the real circuits unusable at their hairpins.
+  let intrusions = 0, worstIntrusion = 0;
+  const halfW = t.width / 2;
+  for (let i = 0; i < N; i++) {
+    const p = b.line[i];
+    for (const sgn of [1, -1]) {
+      const want = sgn * (halfW + (t.runoff || 6));
+      if (noRoom(p, want)) continue;            // no barrier is drawn there
+      const off = sgn * maxOffset(p, want);
+      const bx = p.x + p.nx * off, bz = p.z + p.nz * off;
+      const pr = project(b, bx, bz, i);
+      const clear = Math.abs(pr.lateral);
+      if (clear < halfW) {
+        intrusions++;
+        worstIntrusion = Math.max(worstIntrusion, halfW - clear);
+      }
+    }
+  }
+
   const segs = b.line.map(p => p.seg);
   // A real circuit legitimately contains hairpins, so tight radii are not a
   // failure. What matters is that two stretches of track never share runoff,
   // which is what would break projection, lap counting and the barriers.
-  const ok = minSep >= need && minR > 7;
+  const ok = minSep >= need && minR > 7 && intrusions === 0;
   if (!ok) bad++;
   console.log(
     (ok ? 'PASS ' : 'FAIL ') + t.id.padEnd(11),
@@ -38,7 +59,7 @@ for (const t of TRACKS) {
     'sep', minSep.toFixed(1).padStart(6), '(need ' + need + ')',
     'minRadius', minR.toFixed(1).padStart(6) + (minR < 14 ? ' (hairpin)' : ''),
     'seg', Math.min(...segs).toFixed(1) + '-' + Math.max(...segs).toFixed(1),
-    at ? 'closest ' + at : ''
+    'barrier-on-track', intrusions + (intrusions ? ` (by ${worstIntrusion.toFixed(1)}m)` : '')
   );
 }
 console.log(bad ? `\n${bad} track(s) failing` : '\nall tracks clear');

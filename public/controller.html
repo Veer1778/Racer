@@ -88,6 +88,7 @@
   <div class="bar">
     <button class="ghost" id="calib">Re-centre tilt</button>
     <button class="ghost" id="toggle">Touch steering</button>
+    <button class="ghost" id="pit">Pit</button>
     <button class="ghost" id="rejoin">Rejoin</button>
     <button class="ghost" id="invert">Steering: normal</button>
   </div>
@@ -98,6 +99,7 @@
 const $ = s => document.querySelector(s);
 let ws, pid, sendTimer, keepAlive;
 let input = { s:0, g:0, b:0 };
+let pitOnce = 0;
 let tiltMode = true, tiltZero = null, tiltRaw = 0, touchSteer = 0;
 
 // ---- pairing from #CODE-TOKEN
@@ -141,7 +143,8 @@ function push() {
   if (!ws || ws.readyState !== 1) return;
   const s = tiltMode ? tiltSteer() : touchSteer;
   input.s = Math.max(-1, Math.min(1, s));
-  ws.send(JSON.stringify({ t:'in', s:+input.s.toFixed(3), g:input.g, b:input.b }));
+  ws.send(JSON.stringify({ t:'in', s:+input.s.toFixed(3), g:input.g, b:input.b, p: pitOnce }));
+  pitOnce = 0;
   const f = $('#fill'), pct = Math.abs(input.s) * 50;
   f.style.width = pct + '%';
   f.style.left = input.s >= 0 ? '50%' : (50 - pct) + '%';
@@ -222,6 +225,10 @@ $('#toggle').onclick = () => {
 
 $('#invert').onclick = () => { setInvert(!invert); buzz(15); };
 setInvert(invert);
+
+$('#pit').onclick = () => {
+  if (ws && ws.readyState === 1) { pitOnce = 1; buzz(25); }
+};
 
 $('#rejoin').onclick = () => {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'recover' }));

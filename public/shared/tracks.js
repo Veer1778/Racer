@@ -134,7 +134,11 @@ export function buildTrack(track, spacing = SPACING) {
     acc += len;
   }
 
-  // curvature radius at each sample, precomputed for the bots and for scenery
+  // Curvature at each sample: the radius, and which side of the track the
+  // centre of the bend is on. Anything offset from the centreline (runoff,
+  // kerbs, barriers) has to stay inside that radius on the concave side or the
+  // offset polyline folds through itself, which at a hairpin drags the barrier
+  // straight across the racing line.
   for (let i = 0; i < count; i++) {
     const a = line[i], b = line[(i + 4) % count];
     let dh = Math.atan2(b.tx, b.tz) - Math.atan2(a.tx, a.tz);
@@ -142,6 +146,25 @@ export function buildTrack(track, spacing = SPACING) {
     while (dh < -Math.PI) dh += Math.PI * 2;
     const arc = 4 * step;
     a.radius = Math.abs(dh) < 1e-3 ? 1e4 : arc / Math.abs(dh);
+    const cross = a.tx * b.tz - a.tz * b.tx;
+    a.inner = cross > 0 ? 1 : -1;      // offsets in this direction are limited
+  }
+
+  // The clamp has to use the tightest radius nearby, not the radius at this
+  // exact sample: clamping each sample independently leaves a zigzag where a
+  // hairpin starts, and the zigzag still cuts the corner.
+  const win = Math.ceil(24 / step);
+  const half = track.width / 2;
+  for (let i = 0; i < count; i++) {
+    let r = line[i].radius;
+    for (let k = -win; k <= win; k++) r = Math.min(r, line[((i + k) % count + count) % count].radius);
+    line[i].rmin = r;
+    // How far a feature may sit on the inside of this bend. Below the floor
+    // there is simply no room for one — the two sides of a hairpin are closer
+    // together than the track is wide — and it must be left out rather than
+    // squeezed onto the racing line.
+    line[i].innerCap = Math.max(half + 3, r * 0.62);
+    line[i].noInner = r * 0.62 < half + 3;
   }
 
   return {
@@ -184,6 +207,19 @@ export function project(built, x, z, hint = -1) {
   const along = dx * p.tx + dz * p.tz;
   const lateral = dx * p.nx + dz * p.nz;
   return { idx: best, lateral, dist: p.dist + along, point: p };
+}
+
+// The furthest a feature can sit from the centreline at this sample without the
+// offset curve folding over itself. Only the concave side is limited.
+export function maxOffset(sample, signedOffset) {
+  const d = Math.abs(signedOffset);
+  if (Math.sign(signedOffset) !== sample.inner) return d;
+  return Math.min(d, sample.innerCap || d);
+}
+
+// True where a feature on this side would have to cut across the track.
+export function noRoom(sample, signedOffset) {
+  return Math.sign(signedOffset) === sample.inner && !!sample.noInner;
 }
 
 // Walks the centreline forward by a distance in metres.

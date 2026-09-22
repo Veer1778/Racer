@@ -1,4 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
+import { maxOffset, noRoom } from '../shared/tracks.js';
+import { pitGeometry, TUNE } from '../shared/sim.js';
 
 /* ---------------------------------------------------------------- utils */
 
@@ -112,11 +114,15 @@ function ribbon(line, inner, outer, y, color, closed = true, colorFn = null) {
   const pos = [], col = [], N = line.length;
   const c = new THREE.Color(color);
   const last = closed ? N : N - 1;
+  // clamp() keeps the offset inside the local corner radius, so the strip never
+  // turns itself inside out at a hairpin
+  const clamp = (p, o) => Math.sign(o) * maxOffset(p, o);
   for (let i = 0; i < last; i++) {
     const a = line[i], bb = line[(i + 1) % N];
     const use = colorFn ? new THREE.Color(colorFn(i)) : c;
-    const a1 = [a.x + a.nx * inner, y, a.z + a.nz * inner], a2 = [a.x + a.nx * outer, y, a.z + a.nz * outer];
-    const b1 = [bb.x + bb.nx * inner, y, bb.z + bb.nz * inner], b2 = [bb.x + bb.nx * outer, y, bb.z + bb.nz * outer];
+    const ai = clamp(a, inner), ao = clamp(a, outer), bi = clamp(bb, inner), bo = clamp(bb, outer);
+    const a1 = [a.x + a.nx * ai, y, a.z + a.nz * ai], a2 = [a.x + a.nx * ao, y, a.z + a.nz * ao];
+    const b1 = [bb.x + bb.nx * bi, y, bb.z + bb.nz * bi], b2 = [bb.x + bb.nx * bo, y, bb.z + bb.nz * bo];
     pos.push(...a1, ...a2, ...b2, ...a1, ...b2, ...b1);
     for (let k = 0; k < 6; k++) col.push(use.r, use.g, use.b);
   }
@@ -138,13 +144,15 @@ function wall(line, offset, base, height, colorFn, thick = 0.55) {
   for (let i = 0; i < N; i++) {
     const a = line[i], bb = line[(i + 1) % N];
     const sgn = Math.sign(offset) || 1;
-    const oIn = offset, oOut = offset + thick * sgn;
+    if (noRoom(a, offset) || noRoom(line[(i + 1) % N], offset)) continue;   // no barrier here
+    const oIn = sgn * maxOffset(a, offset), oOut = oIn + thick * sgn;
+    const oInB = sgn * maxOffset(bb, offset), oOutB = oInB + thick * sgn;
     const c = new THREE.Color(colorFn(i));
     const dark = c.clone().multiplyScalar(0.72);
     const ai = [a.x + a.nx * oIn, base, a.z + a.nz * oIn], aiT = [ai[0], base + height, ai[2]];
-    const bi = [bb.x + bb.nx * oIn, base, bb.z + bb.nz * oIn], biT = [bi[0], base + height, bi[2]];
+    const bi = [bb.x + bb.nx * oInB, base, bb.z + bb.nz * oInB], biT = [bi[0], base + height, bi[2]];
     const ao = [a.x + a.nx * oOut, base, a.z + a.nz * oOut], aoT = [ao[0], base + height, ao[2]];
-    const bo = [bb.x + bb.nx * oOut, base, bb.z + bb.nz * oOut], boT = [bo[0], base + height, bo[2]];
+    const bo = [bb.x + bb.nx * oOutB, base, bb.z + bb.nz * oOutB], boT = [bo[0], base + height, bo[2]];
     quad(ai, aiT, biT, bi, c);           // track-facing
     quad(bo, boT, aoT, ao, dark);        // back
     quad(aiT, aoT, boT, biT, c.clone().multiplyScalar(1.12));   // cap
@@ -231,37 +239,47 @@ function scenery(built, theme) {
   }
   if (placed) group.add(b.mesh());
 
-  // Main straight: a run of grandstands down the outside and the pit garages
-  // opposite, spanning both sides of the start line so they are in shot on the
-  // grid, on the run to turn one and every time you come past.
+  // Main straight: grandstands down the outside, pit garages opposite. Every
+  // offset here is built from the track's own tangent and normal — mixing
+  // world axes with track-relative ones is what turned these into a pile of
+  // floating slabs.
   const gs = new PartBuilder();
   const N = built.line.length;
-  const bay = Math.max(2, Math.round(17 / built.step));     // ~17 m per bay
-  const off = built.width / 2 + built.runoff + 7;
+  const bay = Math.max(2, Math.round(18 / built.step));
+  const standOff = built.width / 2 + built.runoff + 10;
 
-  for (let k = -26; k <= 16; k++) {
+  const at = (p, along, out, up) => [
+    p.x + p.tx * along + p.nx * out,
+    up,
+    p.z + p.tz * along + p.nz * out
+  ];
+
+  for (let k = -24; k <= 14; k++) {
     const p = built.line[((k * bay) % N + N) % N];
     const ry = Math.atan2(p.tx, p.tz);
-    const tier = 1 + (Math.abs(k) % 3 === 0 ? 1 : 0);
 
-    // grandstand, outside of the circuit
-    const gx = p.x + p.nx * off, gz = p.z + p.nz * off;
-    gs.box(13, 1.6, 16, gx, 0.8, gz, '#2a3040', ry);                       // base
-    for (let r = 0; r < 6; r++) {                                          // seating rake
-      const w = 12.6 - r * 0.5;
-      gs.box(w, 0.9, 2.3, gx + p.nx * (r * 1.6), 1.8 + r * 1.15, gz + p.nz * (r * 1.6),
-        r % 2 ? '#8d9ab4' : '#5d6a86', ry);
+    // grandstand: base, raked seating, roof on two posts
+    let q = at(p, 0, standOff, 1.5);
+    gs.box(17, 3, 12, q[0], q[1], q[2], '#262c3a', ry);
+    for (let r = 0; r < 5; r++) {
+      const s2 = at(p, 0, standOff + 1.2 + r * 1.9, 3.4 + r * 1.25);
+      gs.box(16.4, 1.25, 2.1, s2[0], s2[1], s2[2], r % 2 ? '#93a0bb' : '#63708d', ry);
     }
-    gs.box(15, 0.7, 17, gx + p.nx * 4.5, 9.4 + tier, gz + p.nz * 4.5, '#e4e8f0', ry);   // roof
-    gs.box(1.1, 9, 1.1, gx + p.nx * 9, 4.5, gz + p.nz * 9 + 7, '#39415a', ry);          // roof posts
-    gs.box(1.1, 9, 1.1, gx + p.nx * 9, 4.5, gz + p.nz * 9 - 7, '#39415a', ry);
+    const roof = at(p, 0, standOff + 5, 11.4);
+    gs.box(18, 0.7, 15, roof[0], roof[1], roof[2], '#dfe4ee', ry);
+    for (const side of [-1, 1]) {
+      const post = at(p, side * 8, standOff + 10.5, 5.6);
+      gs.box(1, 11, 1, post[0], post[1], post[2], '#333c52', ry);
+    }
 
-    // pit garages, inside
-    const px = p.x - p.nx * (built.width / 2 + 9), pz = p.z - p.nz * (built.width / 2 + 9);
-    if (k > -20 && k < 10) {
-      gs.box(11, 5.5, 16, px, 2.75, pz, '#1d2331', ry);
-      gs.box(11.4, 0.6, 16.4, px, 5.8, pz, '#c8d0e0', ry);
-      gs.box(0.4, 3.2, 12, px + p.nx * 5.4, 1.9, pz, k % 2 ? '#39415a' : '#2b3244', ry);
+    // pit garages on the inside, only alongside the pit lane itself
+    if (k > -18 && k < 8) {
+      const g1 = at(p, 0, -(built.width / 2 + TUNE.pitOffset + 8), 3);
+      gs.box(18, 6, 11, g1[0], g1[1], g1[2], '#1b2130', ry);
+      const g2 = at(p, 0, -(built.width / 2 + TUNE.pitOffset + 8), 6.4);
+      gs.box(18.4, 0.8, 11.4, g2[0], g2[1], g2[2], '#c4cddf', ry);
+      const door = at(p, 0, -(built.width / 2 + TUNE.pitOffset + 2.7), 2);
+      gs.box(9, 4, 0.5, door[0], door[1], door[2], k % 2 ? '#2f3a52' : '#3b4760', ry);
     }
   }
   group.add(gs.mesh());
@@ -299,22 +317,31 @@ export function buildWorld(scene, built, theme) {
   scene.add(ribbon(line, half - 0.35, half, 0.03, '#e9edf3'));                      // edge lines
   scene.add(ribbon(line, -half, -half + 0.35, 0.03, '#e9edf3'));
 
-  // kerbs only where the circuit actually bends
-  for (const sgn of [1, -1]) {
-    const seg = [];
-    const flush = () => {
-      if (seg.length > 2) {
-        const start = seg[0].i;
-        scene.add(ribbon(seg.map(s => s.p), sgn > 0 ? half : -half - 1.2, sgn > 0 ? half + 1.2 : -half,
-          0.05, '#fff', false, (i) => ((i + start) % 4 < 2) ? theme.kerb : '#f2f4f8'));
-      }
-      seg.length = 0;
-    };
-    for (let i = 0; i < N; i++) {
-      if (line[i].radius < 260) seg.push({ p: line[i], i });
-      else flush();
+  // Kerbs only where the circuit actually bends, all merged into one mesh:
+  // a mesh per corner meant dozens of draw calls on a real layout.
+  const kerbs = { pos: [], col: [] };
+  const kerbQuad = (a, b, i1, o1, i2, o2, color) => {
+    const c = new THREE.Color(color), y = 0.05;
+    const A1 = [a.x + a.nx * i1, y, a.z + a.nz * i1], A2 = [a.x + a.nx * o1, y, a.z + a.nz * o1];
+    const B1 = [b.x + b.nx * i2, y, b.z + b.nz * i2], B2 = [b.x + b.nx * o2, y, b.z + b.nz * o2];
+    kerbs.pos.push(...A1, ...A2, ...B2, ...A1, ...B2, ...B1);
+    for (let k = 0; k < 6; k++) kerbs.col.push(c.r, c.g, c.b);
+  };
+  for (let i = 0; i < N; i++) {
+    if (line[i].radius >= 260) continue;
+    const a = line[i], b = line[(i + 1) % N];
+    const color = (i % 4 < 2) ? theme.kerb : '#f2f4f8';
+    for (const sgn of [1, -1]) {
+      const inA = sgn * maxOffset(a, sgn * half), inB = sgn * maxOffset(b, sgn * half);
+      kerbQuad(a, b, inA, inA + sgn * 1.2, inB, inB + sgn * 1.2, color);
     }
-    flush();
+  }
+  if (kerbs.pos.length) {
+    const kg = new THREE.BufferGeometry();
+    kg.setAttribute('position', new THREE.Float32BufferAttribute(kerbs.pos, 3));
+    kg.setAttribute('color', new THREE.Float32BufferAttribute(kerbs.col, 3));
+    kg.computeVertexNormals();
+    scene.add(new THREE.Mesh(kg, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
   }
 
   // barriers
@@ -342,6 +369,35 @@ export function buildWorld(scene, built, theme) {
   grid.box(built.width + 7, 1.6, 1.2, s0.x, 9.3, s0.z, '#2b3242', ang);
   grid.box(built.width + 2, 0.9, 0.6, s0.x, 8.2, s0.z, '#e2334a', ang);
   scene.add(grid.mesh());
+
+  // pit lane: the stretch of the main straight the cars peel off onto
+  const pit = pitGeometry(built);
+  const laneSamples = [];
+  for (let i = 0; i < N; i++) {
+    const d = line[i].dist;
+    if (d >= pit.entry - 40 || d <= pit.exit + 40) laneSamples.push({ i, p: line[i] });
+  }
+  // the window wraps past the start line, so order it entry -> line -> exit
+  laneSamples.sort((a, b) => {
+    const ka = a.p.dist >= pit.entry - 40 ? a.p.dist - built.length : a.p.dist;
+    const kb = b.p.dist >= pit.entry - 40 ? b.p.dist - built.length : b.p.dist;
+    return ka - kb;
+  });
+  const lane = laneSamples.map(s => s.p);
+  if (lane.length > 4) {
+    const o = pit.offset;
+    scene.add(ribbon(lane, o - 3.6, o + 3.6, 0.03, theme.pit || '#4c525c', false));
+    scene.add(ribbon(lane, o + 3.4, o + 3.6, 0.05, '#e9edf3', false));
+    scene.add(ribbon(lane, o - 3.6, o - 3.4, 0.05, '#e9edf3', false));
+    // the box itself
+    const boxIdx = Math.round(pit.box / built.step) % N;
+    const bp = line[boxIdx];
+    const pb = new PartBuilder();
+    const ry = Math.atan2(bp.tx, bp.tz);
+    pb.box(7, 0.04, 3, bp.x + bp.nx * o, 0.06, bp.z + bp.nz * o, '#ffc46b', ry);
+    pb.box(0.5, 2.4, 0.5, bp.x + bp.nx * (o - 4), 1.2, bp.z + bp.nz * (o - 4), '#e2334a', ry);
+    scene.add(pb.mesh());
+  }
 
   scene.add(scenery(built, theme));
 }

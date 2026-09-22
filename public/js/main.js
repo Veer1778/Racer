@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { TRACKS, DRIVERS, TEAMS, getTrack, buildTrack } from '../shared/tracks.js';
-import { trackFor, gridCar, stepCar, driverOf, TUNE } from '../shared/sim.js';
+import { trackFor, gridCar, stepCar, driverOf, aiInput, TUNE, COMPOUNDS, compound } from '../shared/sim.js';
 import { carGeometry, buildWorld } from './scene.js';
 
 const $ = s => document.querySelector(s);
@@ -13,7 +13,8 @@ const TICK = 1 / 60;
 let ws, me = { pid: null, token: null, code: null, host: false };
 let lobby = null, hasCtrl = false, rtt = 60;
 const buf = [];                 // snapshots, for interpolating the other cars
-const DELAY = 90;               // ms of render lag applied to other cars only
+let DELAY = 90;                 // ms of render lag applied to other cars only
+let lastSnapAt = 0, jitter = 12; // measured spacing between snapshots
 
 function connect(cb) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
@@ -53,13 +54,47 @@ function handle(m) {
     case 'ctrlOff': hasCtrl = false; break;
     case 'countdown': startRace(m); break;
     case 'go': lightsOut(); break;
-    case 'state':
-      buf.push({ at: performance.now(), cars: m.cars, time: m.time, ends: m.ends });
+    case 'state': {
+      const now = performance.now();
+      if (lastSnapAt) {
+        const gap = now - lastSnapAt;
+        jitter = jitter * 0.9 + Math.abs(gap - 33) * 0.1;
+        // enough buffer to cover the worst recent gap, and no more
+        DELAY = Math.max(55, Math.min(240, 40 + jitter * 3));
+      }
+      lastSnapAt = now;
+      buf.push({ at: now, cars: m.cars, time: m.time, ends: m.ends });
       if (buf.length > 24) buf.shift();
       reconcile(m);
       break;
+    }
     case 'finished':
       flash(m.pid === me.pid ? 'Finished — P' + m.pos : `${m.name} finished P${m.pos}`); break;
+    case 'sector': {
+      const el = $('#sec' + m.i);
+      if (el) {
+        el.textContent = fmt(m.time);
+        el.className = 'sec ' + (m.pb ? 'pb' : 'ok');
+      }
+      break;
+    }
+    case 'crash':
+      flash(m.closing > 28 ? 'Heavy contact' : 'Contact');
+      shake = Math.min(1, m.closing / 40);
+      break;
+    case 'pitstate':
+      if (m.state === 'armed') flash('Pit lane armed');
+      if (m.state === 'lane') flash('Pit limiter on');
+      if (m.state === 'stopped') flash('Stopped for tyres');
+      if (m.state === 'released') flash('Fresh ' + compound(m.tyre).name.toLowerCase() + 's');
+      break;
+    case 'retired':
+      if (m.pid !== me.pid) { flash(m.name + ' retired'); break; }
+      stopRace();
+      show('s-lobby');
+      $('#lobbyerr').textContent = 'You retired from the race.';
+      setTimeout(() => { $('#lobbyerr').textContent = ''; }, 5000);
+      break;
     case 'recovered': my.history = []; smooth.x = smooth.z = smooth.h = 0; flash('Rejoined the track'); break;
     case 'results': showResults(m); break;
   }
@@ -114,6 +149,9 @@ function renderLobby() {
   $('#hostonly').textContent = me.host ? 'You are the host' : 'Host controls the circuit';
   document.querySelectorAll('[data-skill]').forEach(b =>
     b.classList.toggle('on', Math.abs(+b.dataset.skill - lobby.aiSkill) < 0.01));
+  const myRow = lobby.players.find(p => p.pid === me.pid);
+  document.querySelectorAll('[data-tyre]').forEach(b =>
+    b.classList.toggle('on', myRow && b.dataset.tyre === (myRow.tyre || 'medium')));
 
   // The pairing link uses this page's own origin, so it works on a LAN address,
   // a tunnel or a deployed host with no configuration.
@@ -176,6 +214,7 @@ $('#tracks').onclick = e => { const o = e.target.closest('[data-trk]'); if (o &&
 document.querySelectorAll('[data-laps]').forEach(b => b.onclick = () => me.host && send({ t: 'config', laps: lobby.laps + (+b.dataset.laps) }));
 document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => me.host && send({ t: 'config', aiCount: lobby.aiCount + (+b.dataset.ai) }));
 document.querySelectorAll('[data-skill]').forEach(b => b.onclick = () => me.host && send({ t: 'config', aiSkill: +b.dataset.skill }));
+document.querySelectorAll('[data-tyre]').forEach(b => b.onclick = () => send({ t: 'tyre', id: b.dataset.tyre }));
 $('#ready').onclick = () => { const mine = lobby.players.find(p => p.pid === me.pid); send({ t: 'ready', v: !(mine && mine.ready) }); };
 $('#start').onclick = () => send({ t: 'start' });
 $('#again').onclick = () => { if (me.host) send({ t: 'again' }); else show('s-lobby'); };
@@ -183,7 +222,28 @@ $('#again').onclick = () => { if (me.host) send({ t: 'again' }); else show('s-lo
 /* ---------------------------------------------------------------- three */
 
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+let quality = Math.min(devicePixelRatio, 1.75);
+renderer.setPixelRatio(quality);
+
+// Adaptive resolution. A laptop GPU that cannot hold 60 fps at full device
+// pixel ratio produces exactly the uneven frame pacing that reads as stutter,
+// so trade resolution for smoothness and give it back when there is headroom.
+const frameLog = [];
+function paceQuality(dt) {
+  frameLog.push(dt);
+  if (frameLog.length < 90) return;
+  frameLog.sort((a, b) => a - b);
+  const median = frameLog[45];
+  frameLog.length = 0;
+  const want = median > 0.024 ? Math.max(0.75, quality - 0.25)
+             : median < 0.0135 ? Math.min(Math.min(devicePixelRatio, 1.75), quality + 0.25)
+             : quality;
+  if (want !== quality) {
+    quality = want;
+    renderer.setPixelRatio(quality);
+    resize();
+  }
+}
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(66, 1, 0.4, 3000);
 let built = null, carMeshes = new Map(), racing = false, lapCount = 3;
@@ -208,13 +268,66 @@ function clearScene() {
 
 /* -------------------------------------------------- prediction / inputs */
 
-const my = { car: null, drv: null, seq: 0, history: [], input: { s: 0, g: 0, b: 0 }, srvInput: { s: 0, g: 0, b: 0 } };
+const my = { car: null, drv: null, seq: 0, history: [], input: { s: 0, g: 0, b: 0 }, srvInput: { s: 0, g: 0, b: 0 },
+             prev: { x: 0, z: 0, h: 0 } };
+
+// Physics advances in fixed 60 Hz steps, but frames almost never land on those
+// boundaries: a display at 75 or 144 Hz, or any frame-time jitter, makes some
+// frames consume two steps and some none. Drawing the newest state directly is
+// what shows up as stutter, so the renderer draws between the last two states.
+let LERP = true;          // window.__apex.lerp(false) disables, for A/B testing
+let AUTO = false;         // window.__apex.auto(true) hands the car to the bot driver
+function interpolated() {
+  const a = LERP ? Math.max(0, Math.min(1, acc / TICK)) : 1;
+  const c = my.car, p = my.prev;
+  let dh = c.h - p.h;
+  while (dh > Math.PI) dh -= Math.PI * 2;
+  while (dh < -Math.PI) dh += Math.PI * 2;
+  return {
+    x: p.x + (c.x - p.x) * a + smooth.x,
+    z: p.z + (c.z - p.z) * a + smooth.z,
+    h: p.h + dh * a + smooth.h
+  };
+}
 const smooth = { x: 0, z: 0, h: 0 };
 const keys = {};
 
 addEventListener('keydown', e => { keys[e.code] = true; if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault(); });
 addEventListener('keyup', e => { keys[e.code] = false; });
-addEventListener('keydown', e => { if (e.code === 'KeyR' && racing) send({ t: 'recover' }); });
+let pitLatch = 0;
+addEventListener('keydown', e => {
+  if (!racing) return;
+  if (e.code === 'KeyR') send({ t: 'recover' });
+  if (e.code === 'KeyP') { pitLatch = 1; flash('Pit requested'); }
+  if (e.code === 'Escape') retire();
+});
+
+// Two-step, in-game: a native confirm() blocks the render loop and the input
+// stream behind a modal, which on a live race is worse than the mistake it
+// guards against.
+let retireArmed = 0;
+function retire() {
+  if (!racing) return;
+  const now = performance.now();
+  if (now - retireArmed < 4000) {
+    retireArmed = 0;
+    $('#retire').textContent = 'Retire';
+    $('#retire').classList.remove('armed');
+    send({ t: 'retire' });
+    return;
+  }
+  retireArmed = now;
+  $('#retire').textContent = 'Confirm?';
+  $('#retire').classList.add('armed');
+  flash('Press retire again to quit');
+  setTimeout(() => {
+    if (performance.now() - retireArmed >= 4000) {
+      $('#retire').textContent = 'Retire';
+      $('#retire').classList.remove('armed');
+    }
+  }, 4100);
+}
+$('#retire').onclick = retire;
 
 function readKeys() {
   return {
@@ -240,18 +353,24 @@ function stepLocal() {
 
   let steps = 0;
   while (acc >= TICK && steps < 20) {
+    // remember the state entering this step so the renderer can draw between
+    // the last two physics states instead of snapping to the newest one
+    my.prev.x = my.car.x; my.prev.z = my.car.z; my.prev.h = my.car.h;
     acc -= TICK; steps++;
-    const k = readKeys();
-    const usingKeys = !hasCtrl || k.g || k.b || k.s;
+    const k = AUTO && my.car ? aiInput(built, my.car, my.drv, raceClock, 0, 1) : readKeys();
+    const usingKeys = AUTO || !hasCtrl || k.g || k.b || k.s;
     my.input = usingKeys ? k : my.srvInput;
     if (usingKeys) {
       my.seq++;
       my.history.push({ seq: my.seq, in: { ...my.input } });
       if (my.history.length > 240) my.history.shift();
-      send({ t: 'in', s: my.input.s, g: my.input.g, b: my.input.b, q: my.seq });
+      send({ t: 'in', s: my.input.s, g: my.input.g, b: my.input.b, q: my.seq, p: pitLatch });
     }
-    stepCar(built, my.car, my.input, my.drv, TICK, 0, null);
+    stepCar(built, my.car, { ...my.input, pit: pitLatch }, my.drv, TICK, raceClock, null);
+    pitLatch = 0;
   }
+
+  paceQuality(frameDt);
 
   // ease the visual correction out over ~0.3s, frame rate independent
   const k = Math.pow(0.02, dt / 0.3);
@@ -269,6 +388,10 @@ function reconcile(msg) {
   const c = my.car;
   c.x = s.x; c.z = s.z; c.h = s.h; c.v = s.v;
   c.lap = s.lap; c.off = s.off; c.finished = s.fin; c.best = s.best; c.cur = s.cur;
+  c.tyre = s.ty || c.tyre; c.wear = s.w ?? c.wear; c.damage = s.dmg ?? c.damage;
+  c.stops = s.st ?? c.stops;      // the server owns the count, not the prediction
+  c.pit = s.pit || 'no'; c.retired = !!s.ret; c.yaw = s.yaw || 0; c.stops = s.st || 0;
+  raceClock = msg.time;
   c.hint = s.hint !== undefined ? s.hint : c.hint;
   c.prevDist = s.pd !== undefined ? s.pd : c.prevDist;
 
@@ -291,6 +414,7 @@ function reconcile(msg) {
     smooth.h += dh;
   } else {
     smooth.x = smooth.z = smooth.h = 0;     // real divergence: take the server's word
+    my.prev = { x: c.x, z: c.z, h: c.h };
   }
   const mag = Math.hypot(smooth.x, smooth.z), CAP = 4;
   if (mag > CAP) { smooth.x *= CAP / mag; smooth.z *= CAP / mag; }
@@ -299,9 +423,9 @@ function reconcile(msg) {
 
 /* ----------------------------------------------------------------- race */
 
-let flashTimer = null, audio = null, lastLap = 0, stuckFor = 0;
+let flashTimer = null, audio = null, lastLap = 0, stuckFor = 0, raceClock = 0;
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
-let camReady = false;
+let camReady = false, shake = 0;
 
 function startRace(m) {
   lapCount = m.laps;
@@ -328,8 +452,11 @@ function startRace(m) {
   });
 
   smooth.x = smooth.z = smooth.h = 0;
+  my.prev = { x: my.car.x, z: my.car.z, h: my.car.h };
   acc = 0; lastStep = performance.now();
-  camReady = false; lastLap = 0;
+  camReady = false; lastLap = 0; shake = 0;
+  for (let i = 0; i < 3; i++) { const el = $('#sec' + i); el.textContent = 'S' + (i + 1); el.className = 'sec'; }
+  $('#pitbar').classList.remove('on');
   show('');
   $('#hud').classList.add('on');
   $('#lapn').textContent = `1/${lapCount}`;
@@ -374,7 +501,8 @@ function showResults(m) {
   const winner = m.results[0];
   $('#rbody').innerHTML = m.results.map((r, i) => {
     const d = DRIVERS.find(x => x.id === r.driverId) || DRIVERS[0];
-    const gap = r.time && winner.time && i > 0 ? '+' + fmt(r.time - winner.time) : (r.time ? fmt(r.time) : 'DNF');
+    const gap = r.time && winner.time && i > 0 ? '+' + fmt(r.time - winner.time)
+      : r.time ? fmt(r.time) : (r.retired ? 'RET' : 'DNF');
     return `<tr class="${r.pid === me.pid ? 'me' : ''} ${i < 3 ? 'podium' : ''}">
       <td class="pos">${i + 1}</td>
       <td><span class="sw" style="background:${d.color}"></span><b>${esc(r.name)}</b>${r.bot ? ' <span class="team">AI</span>' : ''}</td>
@@ -427,7 +555,21 @@ function otherCars() {
   return { cars: out, time: a.time + (b.time - a.time) * t, ends: a.ends || 0 };
 }
 
-window.__apex = { mineMesh: () => { const e = carMeshes.get(me.pid); return e ? { found: true, visible: e.mesh.visible, pos: e.mesh.position.toArray(), verts: e.mesh.geometry.attributes.position.count, inScene: !!e.mesh.parent } : { found: false, pid: me.pid, keys: [...carMeshes.keys()] }; }, get state() { return { car: my.car && { ...my.car }, cam: camera.position.toArray(), meshes: [...carMeshes].map(([id, e]) => [id, e.mesh.visible, e.mesh.position.toArray()]), rtt, smooth }; } };
+window.__apex = {
+  view: () => interpolated(),
+  lerp: (v) => { LERP = v; return LERP; },
+  auto: (v) => { AUTO = v; return AUTO; },
+  // debug helper: drop the local car at a distance along the lap
+  tp(dist) {
+    if (!built || !my.car) return 'not racing';
+    const i = Math.round(dist / built.step) % built.line.length;
+    const p = built.line[i];
+    my.car.x = p.x; my.car.z = p.z; my.car.h = Math.atan2(p.tx, p.tz);
+    my.car.v = 0; my.car.hint = i; my.car.prevDist = p.dist;
+    camReady = false;
+    return { dist: p.dist, radius: Math.round(p.radius) };
+  },
+  mineMesh: () => { const e = carMeshes.get(me.pid); return e ? { found: true, visible: e.mesh.visible, pos: e.mesh.position.toArray(), verts: e.mesh.geometry.attributes.position.count, inScene: !!e.mesh.parent } : { found: false, pid: me.pid, keys: [...carMeshes.keys()] }; }, get state() { return { car: my.car && { ...my.car }, cam: camera.position.toArray(), meshes: [...carMeshes].map(([id, e]) => [id, e.mesh.visible, e.mesh.position.toArray()]), rtt, smooth }; } };
 
 function render() {
   requestAnimationFrame(render);
@@ -436,7 +578,8 @@ function render() {
   const snap = otherCars();
   if (!snap) return;
 
-  const px = my.car.x + smooth.x, pz = my.car.z + smooth.z, ph = my.car.h + smooth.h;
+  const view = interpolated();
+  const px = view.x, pz = view.z, ph = view.h;
 
   for (const [id, entry] of carMeshes) {
     if (id === me.pid) {
@@ -454,6 +597,12 @@ function render() {
   const speed = Math.abs(my.car.v);
   const fast = Math.min(1, speed / 70);
   const back = 13.5 + fast * 4.5, up = 5.4 + fast * 1.1;
+  if (shake > 0.001) {
+    shake *= Math.max(0, 1 - frameDt * 4);
+    const k = shake * 1.4;
+    camAim.x += (Math.sin(performance.now() * 0.07) * k);
+    camAim.y += (Math.sin(performance.now() * 0.11) * k * 0.6);
+  }
   const target = new THREE.Vector3(px - Math.sin(ph) * back, up, pz - Math.cos(ph) * back);
   const aim = new THREE.Vector3(px + Math.sin(ph) * 18, 2.0, pz + Math.cos(ph) * 18);
   if (!camReady) { camPos.copy(target); camAim.copy(aim); camReady = true; }
@@ -476,11 +625,16 @@ const revCells = (() => {
   return [...el.children];
 })();
 
+// The readouts that must track the car exactly run every frame. Rebuilding the
+// standings DOM and re-stroking the circuit outline are far too expensive for
+// that, so they run a few times a second instead: doing them per frame is what
+// made the car look like it was stuttering.
+let hudSlow = 0;
+
 function hud(snap, speed) {
   const srv = snap.cars.get(me.pid);
-  const cars = [...snap.cars.values()].sort((a, b) => a.pos - b.pos);
   $('#posn').textContent = srv ? srv.pos : 1;
-  $('#posof').textContent = '/' + cars.length;
+
   $('#lapn').textContent = `${Math.min(lapCount, Math.max(1, my.car.lap + 1))}/${lapCount}`;
   $('#kph').textContent = Math.round(speed * 3.6);
   $('#tbest').textContent = my.car.best ? fmt(my.car.best) : '--.--';
@@ -503,25 +657,54 @@ function hud(snap, speed) {
     lastLap = my.car.lap;
     if (my.car.lap > 0 && my.car.lap <= lapCount) flash('Lap ' + my.car.lap);
   }
-  const left = snap.ends ? Math.max(0, snap.ends - snap.time) : 0;
-  stuckFor = (speed < 3 && !my.car.finished) ? stuckFor + 1 : 0;
-  $('#ctrlhint').textContent =
-    left ? `Race ends in ${Math.ceil(left)}s`
-    : stuckFor > 70 ? (hasCtrl ? 'Stuck? Tap rejoin on your phone' : 'Stuck? Press R to rejoin')
-    : (hasCtrl ? 'Phone controller connected' : 'Arrow keys or WASD');
 
-  // gaps: distance behind the leader, expressed as time at the current pace
-  const leader = cars[0];
-  $('#board').innerHTML = cars.map(c => {
-    const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
-    const behind = (leader.pr || 0) - (c.pr || 0);
-    const gap = c.pos === 1 ? 'LEAD' : '+' + (behind / Math.max(25, speed)).toFixed(1);
-    return `<div class="r ${c.id === me.pid ? 'me' : ''}">
-      <span class="i">${c.pos}</span>
-      <span class="sw" style="background:${d.color}"></span>
-      <span class="n">${esc(c.n)}</span>
-      <span class="g">${gap}</span></div>`;
-  }).join('');
+  const now = performance.now();
+  if (now - hudSlow > 160) {
+    hudSlow = now;
+
+    const c = compound(my.car.tyre);
+    const badge = $('#tyre');
+    badge.textContent = c.short;
+    badge.style.background = c.color;
+    const wearLeft = Math.max(0, 1 - my.car.wear);
+    const wearEl = $('#wear');
+    wearEl.style.width = (wearLeft * 100).toFixed(0) + '%';
+    wearEl.className = wearLeft < 0.2 ? 'bad' : wearLeft < 0.45 ? 'mid' : '';
+    $('#stops').textContent = (my.car.stops || 0) + (my.car.stops === 1 ? ' stop' : ' stops');
+    const dmgEl = $('#dmg');
+    dmgEl.style.width = ((my.car.damage || 0) * 100).toFixed(0) + '%';
+    dmgEl.className = my.car.damage > 0.5 ? 'bad' : my.car.damage > 0.2 ? 'mid' : '';
+
+    const st = my.car.pit;
+    $('#pitbar').classList.toggle('on', st && st !== 'no');
+    $('#pittext').textContent =
+      st === 'armed' ? 'Pit next lap — press P to cancel'
+      : st === 'lane' ? 'Pit limiter'
+      : st === 'stopped' ? 'Tyres on — ' + Math.max(0, my.car.pitClock || 0).toFixed(1) + 's'
+      : '';
+    const cars = [...snap.cars.values()].sort((a, b) => a.pos - b.pos);
+    $('#posof').textContent = '/' + cars.length;
+
+    const left = snap.ends ? Math.max(0, snap.ends - snap.time) : 0;
+    $('#ctrlhint').textContent =
+      left ? `Race ends in ${Math.ceil(left)}s`
+      : stuckFor > 2.5 ? (hasCtrl ? 'Stuck? Tap rejoin on your phone' : 'Stuck? Press R to rejoin')
+      : (hasCtrl ? 'Phone controller connected' : 'Arrow keys or WASD');
+
+    // gaps: distance behind the leader, expressed as time at the current pace
+    const leader = cars[0];
+    $('#board').innerHTML = cars.map(c => {
+      const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
+      const behind = (leader.pr || 0) - (c.pr || 0);
+      const gap = c.pos === 1 ? 'LEAD' : '+' + (behind / Math.max(25, speed)).toFixed(1);
+      return `<div class="r ${c.id === me.pid ? 'me' : ''}">
+        <span class="i">${c.pos}</span>
+        <span class="sw" style="background:${d.color}"></span>
+        <span class="n">${esc(c.n)}</span>
+        <span class="g">${gap}</span></div>`;
+    }).join('');
+  }
+  stuckFor = (speed < 3 && !my.car.finished) ? stuckFor + frameDt : 0;
 
   if (audio) {
     const f = 46 + speed * 3.1 + revs * 26;
@@ -535,36 +718,52 @@ function hud(snap, speed) {
 /* -------------------------------------------------------------- minimap */
 
 const mini = $('#mini'), mctx = mini.getContext('2d');
-let miniBounds = null, miniTrack = null;
+let miniBounds = null, miniTrack = null, miniBase = null;
+
+function buildMiniBase() {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const p of built.line) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+  const pad = 26, s = Math.min((mini.width - pad * 2) / (x1 - x0), (mini.height - pad * 2) / (z1 - z0));
+  miniBounds = { x0, z0, s, pad, w: (x1 - x0) * s, h: (z1 - z0) * s };
+  miniTrack = built;
+
+  // the outline never changes during a race, so stroke it once
+  miniBase = document.createElement('canvas');
+  miniBase.width = mini.width; miniBase.height = mini.height;
+  const c = miniBase.getContext('2d');
+  c.lineWidth = 9; c.strokeStyle = 'rgba(255,255,255,.17)'; c.lineJoin = 'round'; c.lineCap = 'round';
+  c.beginPath();
+  const step = Math.max(1, Math.round(built.line.length / 160));
+  for (let i = 0; i < built.line.length; i += step) {
+    const p = built.line[i];
+    i ? c.lineTo(miniX(p), miniZ(p)) : c.moveTo(miniX(p), miniZ(p));
+  }
+  c.closePath(); c.stroke();
+
+  // start line marker
+  const s0 = built.line[0];
+  c.strokeStyle = '#e9edf5'; c.lineWidth = 3;
+  c.beginPath();
+  c.moveTo(miniX(s0) - s0.nx * 5, miniZ(s0) + s0.nz * 5);
+  c.lineTo(miniX(s0) + s0.nx * 5, miniZ(s0) - s0.nz * 5);
+  c.stroke();
+}
+
+const miniX = p => miniBounds.pad + (p.x - miniBounds.x0) * miniBounds.s + (mini.width - miniBounds.pad * 2 - miniBounds.w) / 2;
+const miniZ = p => mini.height - (miniBounds.pad + (p.z - miniBounds.z0) * miniBounds.s + (mini.height - miniBounds.pad * 2 - miniBounds.h) / 2);
 
 function drawMini(snap) {
   if (!built) return;
-  if (miniTrack !== built) {
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (const p of built.line) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
-    const pad = 26, s = Math.min((mini.width - pad * 2) / (x1 - x0), (mini.height - pad * 2) / (z1 - z0));
-    miniBounds = { x0, z0, s, pad, w: (x1 - x0) * s, h: (z1 - z0) * s };
-    miniTrack = built;
-  }
-  const B = miniBounds;
-  const px = p => B.pad + (p.x - B.x0) * B.s + (mini.width - B.pad * 2 - B.w) / 2;
-  const pz = p => mini.height - (B.pad + (p.z - B.z0) * B.s + (mini.height - B.pad * 2 - B.h) / 2);
-
+  if (miniTrack !== built) buildMiniBase();
   mctx.clearRect(0, 0, mini.width, mini.height);
-  mctx.lineWidth = 8; mctx.strokeStyle = 'rgba(255,255,255,.18)'; mctx.lineJoin = 'round';
-  mctx.beginPath();
-  for (let i = 0; i < built.line.length; i += 2) {
-    const p = built.line[i];
-    i ? mctx.lineTo(px(p), pz(p)) : mctx.moveTo(px(p), pz(p));
-  }
-  mctx.closePath(); mctx.stroke();
+  mctx.drawImage(miniBase, 0, 0);
 
   for (const c of snap.cars.values()) {
     if (c.id === me.pid) continue;
     const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
     mctx.fillStyle = d.color;
-    mctx.beginPath(); mctx.arc(px(c), pz(c), 5, 0, 7); mctx.fill();
+    mctx.beginPath(); mctx.arc(miniX(c), miniZ(c), 5, 0, 7); mctx.fill();
   }
   mctx.fillStyle = '#ffd166';
-  mctx.beginPath(); mctx.arc(px(my.car), pz(my.car), 7.5, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.arc(miniX(my.car), miniZ(my.car), 7.5, 0, 7); mctx.fill();
 }

@@ -153,6 +153,32 @@
   .revs i.red{background:#ff5f6d}
   #gear{position:absolute;left:16px;bottom:14px;font:900 italic 34px/1 ui-monospace,monospace;color:var(--accent)}
 
+  /* tyres, damage, sectors */
+  #car{left:24px;bottom:232px;padding:10px 13px;min-width:244px}
+  #car .row{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+  #car .row:last-child{margin-bottom:0}
+  .tyrebadge{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;
+    font:900 italic 12px/1 ui-monospace,monospace;color:#0a0d13;border:2px solid rgba(255,255,255,.2)}
+  .meter{flex:1;height:7px;background:#141a25;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:var(--good);transition:width .2s,background .2s}
+  .meter i.mid{background:var(--warn)} .meter i.bad{background:#ff5f6d}
+  #car .k{font-size:9px;font-weight:800;letter-spacing:.18em;color:var(--dim);width:46px}
+
+  #sectors{position:absolute;right:24px;top:352px;display:flex;gap:6px}
+  .sec{min-width:62px;padding:6px 8px;text-align:center;font:800 italic 12px/1 ui-monospace,monospace;
+    background:rgba(9,12,19,.85);border:1px solid rgba(255,255,255,.08);color:var(--dim)}
+  .sec.ok{color:var(--good);border-color:#1d5c3a}
+  .sec.pb{color:#c39bff;border-color:#5a3d8f}
+
+  #pitbar{position:absolute;left:50%;top:22px;transform:translateX(-50%);display:none;align-items:center;gap:10px;
+    padding:8px 16px;background:rgba(226,51,74,.16);border:1px solid rgba(226,51,74,.5);
+    font:800 12px/1 ui-sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#ffb3bb}
+  #pitbar.on{display:flex}
+
+  #retire{position:absolute;right:24px;bottom:150px;pointer-events:auto;padding:9px 14px;font-size:11px;
+    background:rgba(9,12,19,.85);border:1px solid rgba(255,255,255,.12)}
+  #retire:hover{background:rgba(226,51,74,.25)}
+
   #board{left:24px;bottom:24px;padding:10px 12px;min-width:244px;font-size:12px}
   #board .r{display:flex;align-items:center;gap:9px;padding:3px 5px;border-left:3px solid transparent}
   #board .r.me{background:rgba(255,255,255,.06);border-left-color:var(--accent)}
@@ -169,6 +195,7 @@
   #flash{position:absolute;left:50%;top:36%;transform:translateX(-50%);font:800 13px/1 ui-sans-serif;
     letter-spacing:.24em;text-transform:uppercase;color:var(--warn);opacity:0;transition:opacity .3s;
     background:rgba(8,11,17,.8);padding:9px 18px;border:1px solid rgba(255,196,107,.3)}
+  #retire.armed{background:var(--accent);color:#fff}
   #ctrlhint{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);font-size:11px;font-weight:700;
     letter-spacing:.16em;text-transform:uppercase;color:var(--dim);background:rgba(8,11,17,.8);
     border:1px solid rgba(255,255,255,.08);padding:8px 18px}
@@ -240,6 +267,10 @@
       <button class="sq" data-laps="-1">–</button><b id="laps">3</b><button class="sq" data-laps="1">+</button></div>
     <div class="setting"><span class="label">AI</span>
       <button class="sq" data-ai="-1">–</button><b id="ai">7</b><button class="sq" data-ai="1">+</button></div>
+    <div class="setting"><span class="label">Start tyre</span>
+      <button class="sq" data-tyre="soft">S</button>
+      <button class="sq" data-tyre="medium">M</button>
+      <button class="sq" data-tyre="hard">H</button></div>
     <div class="setting"><span class="label">Pace</span>
       <button class="sq" data-skill="0.86">Relaxed</button>
       <button class="sq" data-skill="0.94">Standard</button>
@@ -296,6 +327,26 @@
     <div class="revs" id="revs"></div>
     <span id="gear">N</span>
   </div>
+
+  <div class="panel" id="car">
+    <div class="row">
+      <span class="tyrebadge" id="tyre">M</span>
+      <span class="k">Tyres</span>
+      <span class="meter"><i id="wear"></i></span>
+      <span class="k" id="stops" style="width:auto">0 stops</span>
+    </div>
+    <div class="row">
+      <span class="k" style="width:72px">Damage</span>
+      <span class="meter"><i id="dmg"></i></span>
+    </div>
+  </div>
+
+  <div id="sectors">
+    <div class="sec" id="sec0">S1</div><div class="sec" id="sec1">S2</div><div class="sec" id="sec2">S3</div>
+  </div>
+
+  <div id="pitbar"><span id="pittext">Pit lane</span></div>
+  <button id="retire">Retire</button>
 
   <div class="panel" id="board"></div>
 
