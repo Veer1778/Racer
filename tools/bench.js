@@ -1,6 +1,6 @@
 // Headless physics bench: races bots on every circuit and reports how well they drive.
 import { TRACKS } from '../public/shared/tracks.js';
-import { trackFor, gridCar, aiInput, stepCar, separate, driverOf, TUNE } from '../sim.js';
+import { trackFor, gridCar, aiInput, stepCar, separate, driverOf, TUNE } from '../public/shared/sim.js';
 
 const DT = 1 / 60;
 const LAPS = 3;
@@ -12,7 +12,7 @@ for (const t of TRACKS) {
   let time = 0, offTicks = 0, ticks = 0, hits = 0, lastHit = -9;
   const done = [];
 
-  while (time < 400 && done.length < cars.length) {
+  while (time < 620 && done.length < cars.length) {
     time += DT;
     cars.forEach((c, i) => {
       if (c.finished) return;

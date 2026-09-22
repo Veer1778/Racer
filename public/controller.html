@@ -73,13 +73,14 @@
   <div class="bar">
     <button class="ghost" id="calib">Re-centre tilt</button>
     <button class="ghost" id="toggle">Touch steering</button>
+    <button class="ghost" id="rejoin">Rejoin</button>
   </div>
   <div class="mode" id="mode">tilt mode · hold the phone in landscape</div>
 </div>
 
 <script>
 const $ = s => document.querySelector(s);
-let ws, pid, sendTimer;
+let ws, pid, sendTimer, keepAlive;
 let input = { s:0, g:0, b:0 };
 let tiltMode = true, tiltZero = null, tiltRaw = 0, touchSteer = 0;
 
@@ -106,10 +107,12 @@ function connect(code, token) {
       askTilt();
       clearInterval(sendTimer);
       sendTimer = setInterval(push, 33);
+      clearInterval(keepAlive);
+      keepAlive = setInterval(() => ws.readyState === 1 && ws.send(JSON.stringify({ t: 'ping', c: 0 })), 8000);
     }
   };
   ws.onclose = () => {
-    clearInterval(sendTimer);
+    clearInterval(sendTimer); clearInterval(keepAlive);
     $('#status').textContent = 'disconnected';
     $('#drive').classList.remove('on'); $('#pair').classList.add('on');
     $('#perr').textContent = 'Connection lost. Reconnect below.';
@@ -156,6 +159,7 @@ function askTilt() {
 function setTouch() { tiltMode = false; $('#mode').textContent = 'touch mode · drag the bar to steer'; $('#slbl').textContent = 'DRAG TO STEER'; $('#toggle').textContent = 'Tilt steering'; }
 
 $('#calib').onclick = () => { tiltZero = tiltRaw; buzz(12); };
+$('#rejoin').onclick = () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'recover' })); buzz(20); };
 $('#toggle').onclick = () => {
   tiltMode = !tiltMode;
   if (tiltMode) { askTilt(); $('#mode').textContent = 'tilt mode · hold the phone in landscape'; $('#slbl').textContent = 'TILT TO STEER'; $('#toggle').textContent = 'Touch steering'; }

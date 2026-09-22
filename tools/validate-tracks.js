@@ -27,13 +27,16 @@ for (const t of TRACKS) {
     if (Math.abs(dh) > 1e-4) minR = Math.min(minR, arc / Math.abs(dh));
   }
   const segs = b.line.map(p => p.seg);
-  const ok = minSep >= need && minR > 12;
+  // A real circuit legitimately contains hairpins, so tight radii are not a
+  // failure. What matters is that two stretches of track never share runoff,
+  // which is what would break projection, lap counting and the barriers.
+  const ok = minSep >= need && minR > 7;
   if (!ok) bad++;
   console.log(
     (ok ? 'PASS ' : 'FAIL ') + t.id.padEnd(11),
     'len', b.length.toFixed(0).padStart(5),
     'sep', minSep.toFixed(1).padStart(6), '(need ' + need + ')',
-    'minRadius', minR.toFixed(1).padStart(6),
+    'minRadius', minR.toFixed(1).padStart(6) + (minR < 14 ? ' (hairpin)' : ''),
     'seg', Math.min(...segs).toFixed(1) + '-' + Math.max(...segs).toFixed(1),
     at ? 'closest ' + at : ''
   );

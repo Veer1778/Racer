@@ -27,7 +27,8 @@
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .grid{display:grid;gap:10px}
   .drivers{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
-  .tracks{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+  .tracks{grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+  .opt .nm .pill{margin-left:6px;font-size:9px}
   .opt{background:#0f1520;border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;transition:.12s}
   .opt:hover{border-color:#31405c}
   .opt.sel{border-color:var(--accent);background:#161320}
@@ -69,7 +70,7 @@
   #board .r{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
   #board .r.me{color:#ffd166}
   #board .r i{color:var(--dim);font-style:normal;width:18px;display:inline-block}
-  #mini{position:absolute;right:20px;top:120px;width:170px;height:170px;background:rgba(7,11,18,.7);
+  #mini{position:absolute;right:20px;top:196px;width:170px;height:170px;background:rgba(7,11,18,.88);
         border:1px solid rgba(255,255,255,.07);border-radius:14px}
   #lights{position:absolute;left:50%;top:14%;transform:translateX(-50%);display:flex;gap:12px}
   .light{width:42px;height:42px;border-radius:50%;background:#1a1f2b;border:2px solid #2a3244}
@@ -174,7 +175,8 @@
 <div id="hud">
   <div class="hl" id="pos"><b id="posn">1</b><span>pos</span></div>
   <div class="hl" id="lap">LAP <b id="lapn">1/3</b></div>
-  <div class="hl" id="times"><div class="k">CURRENT</div><div id="tcur">0.00</div><div class="k">BEST</div><div id="tbest">--.--</div></div>
+  <div class="hl" id="times"><div class="k">CURRENT</div><div id="tcur">0.00</div><div class="k">BEST</div><div id="tbest">--.--</div>
+    <div class="k" style="margin-top:6px">PING</div><div id="ping">-- ms</div></div>
   <div class="hl" id="speed"><b id="kph">0</b><span>km/h</span></div>
   <div class="hl" id="board"></div>
   <canvas id="mini" width="340" height="340"></canvas>

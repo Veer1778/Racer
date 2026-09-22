@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TRACKS, DRIVERS, getTrack } from './public/shared/tracks.js';
-import { trackFor, gridCar, aiInput, stepCar, separate, driverOf } from './sim.js';
+import { trackFor, gridCar, aiInput, stepCar, separate, driverOf } from './public/shared/sim.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -54,7 +54,7 @@ function newRoom() {
     code,
     hostId: null,
     trackId: TRACKS[0].id,
-    laps: 3,
+    laps: TRACKS[0].laps || 3,
     aiCount: 3,
     aiSkill: 0.94,
     state: 'lobby',       // lobby | countdown | racing | results
@@ -124,9 +124,25 @@ function resetGrid(room) {
   });
 }
 
+// Puts a stranded car back on the racing line, facing the right way.
+function recover(room, p) {
+  const c = p.car, s = room.built.line[c.hint];
+  if (!c || c.finished) return;
+  c.x = s.x; c.z = s.z;
+  c.h = Math.atan2(s.tx, s.tz);
+  c.v = 0; c.off = false; c.slip = false; c.stuck = 0;
+  send(p.ws, { t: 'recovered' });
+}
+
 function tickCar(room, p, dt) {
   const drv = driverOf(p.driverId);
   const input = p.bot ? aiInput(room.built, p.car, drv, room.raceTime, p.seed, room.aiSkill) : p.input;
+  // anyone parked against a barrier gets rejoined automatically
+  if (!p.car.finished && Math.abs(p.car.v) < 3 && room.raceTime > 3) {
+    p.car.stuck = (p.car.stuck || 0) + dt;
+    if (p.car.stuck > 6) recover(room, p);
+  } else p.car.stuck = 0;
+
   stepCar(room.built, p.car, input, drv, dt, room.raceTime, (lap) => {
     if (lap > room.laps && !p.car.finished) {
       p.car.finished = true;
@@ -161,7 +177,9 @@ function snapshot(room) {
       id: p.pid, n: p.name, d: p.driverId, bot: p.bot,
       x: +p.car.x.toFixed(2), z: +p.car.z.toFixed(2), h: +p.car.h.toFixed(3),
       v: +p.car.v.toFixed(1), lap: Math.max(0, p.car.lap), pos: posOf.get(p.pid),
-      off: p.car.off, fin: p.car.finished, best: p.car.best,
+      off: p.car.off, fin: p.car.finished, best: p.car.best, q: p.seq || 0,
+      hint: p.car.hint, pd: +p.car.prevDist.toFixed(2),
+      in: p.bot ? undefined : { s: +(p.input.s || 0).toFixed(2), g: p.input.g || 0, b: p.input.b || 0 },
       cur: +Math.max(0, room.raceTime - p.car.lapStart).toFixed(2)
     }))
   };
@@ -203,7 +221,7 @@ setInterval(() => {
   // 20 Hz broadcast
   for (const room of rooms.values()) {
     if (room.state !== 'racing' && room.state !== 'countdown') continue;
-    if (now - room.lastBroadcast < 50) continue;
+    if (now - room.lastBroadcast < 33) continue;
     room.lastBroadcast = now;
     if (room.built) broadcast(room, snapshot(room));
   }
@@ -227,7 +245,7 @@ function startRace(room) {
   room.results = [];
   resetGrid(room);
   room.state = 'countdown';
-  room.startAt = Date.now() + 4200;
+  room.startAt = Date.now() + 5000;
   broadcast(room, {
     t: 'countdown', at: room.startAt, laps: room.laps, trackId: room.trackId,
     grid: [...room.players.values()].map(p => ({ id: p.pid, n: p.name, d: p.driverId, bot: p.bot }))
@@ -236,8 +254,21 @@ function startRace(room) {
 
 /* ------------------------------------------------------------ sockets */
 
+// Proxies drop idle WebSockets without telling either end, which leaves a
+// client happily sending into a dead socket. Ping every 20s and cull the dead.
+const HEARTBEAT = 20000;
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { try { ws.terminate(); } catch {} continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, HEARTBEAT);
+
 wss.on('connection', (ws) => {
   ws.meta = {};
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (raw) => {
     let m; try { m = JSON.parse(raw); } catch { return; }
     const { room, player } = ws.meta.code ? { room: rooms.get(ws.meta.code), player: rooms.get(ws.meta.code)?.players.get(ws.meta.pid) } : {};
@@ -279,6 +310,7 @@ wss.on('connection', (ws) => {
       case 'in': {
         if (!player) return;
         player.input = { s: m.s || 0, g: m.g || 0, b: m.b || 0 };
+        if (m.q !== undefined) player.seq = m.q;
         break;
       }
       case 'pick': {
@@ -298,7 +330,10 @@ wss.on('connection', (ws) => {
       }
       case 'config': {
         if (!room || !player || room.hostId !== player.pid) return;
-        if (m.trackId && TRACKS.some(t => t.id === m.trackId)) room.trackId = m.trackId;
+        if (m.trackId && TRACKS.some(t => t.id === m.trackId) && m.trackId !== room.trackId) {
+          room.trackId = m.trackId;
+          room.laps = getTrack(m.trackId).laps || 3;   // real circuits default to fewer laps
+        }
         if (m.laps) room.laps = Math.max(1, Math.min(10, m.laps | 0));
         if (m.aiCount !== undefined) room.aiCount = Math.max(0, Math.min(6, m.aiCount | 0));
         if (m.aiSkill) room.aiSkill = Math.max(0.8, Math.min(1, +m.aiSkill));
@@ -317,7 +352,12 @@ wss.on('connection', (ws) => {
         pushLobby(room);
         break;
       }
-      case 'ping': send(ws, { t: 'pong', c: m.c }); break;
+      case 'recover': {
+        if (!room || !player || !player.car || room.state !== 'racing') return;
+        recover(room, player);
+        break;
+      }
+      case 'ping': ws.isAlive = true; send(ws, { t: 'pong', c: m.c, srv: room ? room.raceTime : 0 }); break;
     }
   });
 
