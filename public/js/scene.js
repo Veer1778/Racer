@@ -48,7 +48,7 @@ const TYRE = '#15181e', DARK = '#0e1117', CHROME = '#aeb7c4';
 
 // Blocky open-wheeler: front and rear wings, sidepods, airbox, halo, and a
 // driver whose helmet and shoulders sit up out of the cockpit.
-export function carGeometry(color, trim) {
+export function carGeometry(color, trim, helmet = trim) {
   const b = new PartBuilder();
   const X = Math.PI / 2;
   const wheelRot = new THREE.Euler(0, 0, X);
@@ -73,9 +73,10 @@ export function carGeometry(color, trim) {
   b.box(0.86, 0.40, 1.30, 0, 0.80, 0.55, color);
   b.box(0.66, 0.26, 0.90, 0, 0.98, 0.62, DARK);
   b.box(0.62, 0.30, 0.42, 0, 1.00, 0.30, DARK);          // shoulders
-  b.box(0.42, 0.40, 0.44, 0, 1.28, 0.36, trim);           // helmet
+  b.box(0.42, 0.40, 0.44, 0, 1.28, 0.36, helmet);         // helmet
   b.box(0.44, 0.12, 0.10, 0, 1.26, 0.58, DARK);           // visor
   b.box(0.30, 0.10, 0.22, 0, 1.46, 0.34, color);          // helmet crest
+  b.box(0.44, 0.09, 0.26, 0, 1.18, 0.36, color);          // collar
   // halo
   b.box(0.08, 0.30, 0.10, 0.44, 1.18, 0.45, CHROME);
   b.box(0.08, 0.30, 0.10, -0.44, 1.18, 0.45, CHROME);
@@ -126,16 +127,27 @@ function ribbon(line, inner, outer, y, color, closed = true, colorFn = null) {
   return new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
 }
 
-function wall(line, offset, base, height, colorFn) {
+// A barrier with real thickness: inner face, outer face and a top cap. A single
+// plane reads as paper from the cockpit and vanishes edge-on.
+function wall(line, offset, base, height, colorFn, thick = 0.55) {
   const pos = [], col = [], N = line.length;
+  const quad = (p1, p2, p3, p4, c) => {
+    pos.push(...p1, ...p2, ...p3, ...p1, ...p3, ...p4);
+    for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
+  };
   for (let i = 0; i < N; i++) {
     const a = line[i], bb = line[(i + 1) % N];
-    const ax = a.x + a.nx * offset, az = a.z + a.nz * offset;
-    const bx = bb.x + bb.nx * offset, bz = bb.z + bb.nz * offset;
+    const sgn = Math.sign(offset) || 1;
+    const oIn = offset, oOut = offset + thick * sgn;
     const c = new THREE.Color(colorFn(i));
-    pos.push(ax, base, az, ax, base + height, az, bx, base + height, bz);
-    pos.push(ax, base, az, bx, base + height, bz, bx, base, bz);
-    for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
+    const dark = c.clone().multiplyScalar(0.72);
+    const ai = [a.x + a.nx * oIn, base, a.z + a.nz * oIn], aiT = [ai[0], base + height, ai[2]];
+    const bi = [bb.x + bb.nx * oIn, base, bb.z + bb.nz * oIn], biT = [bi[0], base + height, bi[2]];
+    const ao = [a.x + a.nx * oOut, base, a.z + a.nz * oOut], aoT = [ao[0], base + height, ao[2]];
+    const bo = [bb.x + bb.nx * oOut, base, bb.z + bb.nz * oOut], boT = [bo[0], base + height, bo[2]];
+    quad(ai, aiT, biT, bi, c);           // track-facing
+    quad(bo, boT, aoT, ao, dark);        // back
+    quad(aiT, aoT, boT, biT, c.clone().multiplyScalar(1.12));   // cap
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -219,19 +231,37 @@ function scenery(built, theme) {
   }
   if (placed) group.add(b.mesh());
 
-  // grandstands along the pit straight
+  // Main straight: a run of grandstands down the outside and the pit garages
+  // opposite, spanning both sides of the start line so they are in shot on the
+  // grid, on the run to turn one and every time you come past.
   const gs = new PartBuilder();
-  for (let k = 1; k <= 7; k++) {
-    const p = built.line[(built.line.length - k * 9) % built.line.length];
-    const off = built.width / 2 + built.runoff + 9;
-    for (const side of [1, -1]) {
-      const x = p.x + p.nx * off * side, z = p.z + p.nz * off * side;
-      const ry = Math.atan2(p.tx, p.tz);
-      gs.box(9, 7, 16, x, 3.5, z, side > 0 ? '#3b4250' : '#39404d', ry);
-      gs.box(9.4, 0.8, 16.4, x, 7.4, z, '#e2e6ee', ry);
-      for (let r = 0; r < 4; r++) {
-        gs.box(8.2, 0.5, 2.6, x, 2.2 + r * 1.3, z + (r - 1.5) * 0.1, r % 2 ? '#c9d2e2' : '#8f9bb3', ry);
-      }
+  const N = built.line.length;
+  const bay = Math.max(2, Math.round(17 / built.step));     // ~17 m per bay
+  const off = built.width / 2 + built.runoff + 7;
+
+  for (let k = -26; k <= 16; k++) {
+    const p = built.line[((k * bay) % N + N) % N];
+    const ry = Math.atan2(p.tx, p.tz);
+    const tier = 1 + (Math.abs(k) % 3 === 0 ? 1 : 0);
+
+    // grandstand, outside of the circuit
+    const gx = p.x + p.nx * off, gz = p.z + p.nz * off;
+    gs.box(13, 1.6, 16, gx, 0.8, gz, '#2a3040', ry);                       // base
+    for (let r = 0; r < 6; r++) {                                          // seating rake
+      const w = 12.6 - r * 0.5;
+      gs.box(w, 0.9, 2.3, gx + p.nx * (r * 1.6), 1.8 + r * 1.15, gz + p.nz * (r * 1.6),
+        r % 2 ? '#8d9ab4' : '#5d6a86', ry);
+    }
+    gs.box(15, 0.7, 17, gx + p.nx * 4.5, 9.4 + tier, gz + p.nz * 4.5, '#e4e8f0', ry);   // roof
+    gs.box(1.1, 9, 1.1, gx + p.nx * 9, 4.5, gz + p.nz * 9 + 7, '#39415a', ry);          // roof posts
+    gs.box(1.1, 9, 1.1, gx + p.nx * 9, 4.5, gz + p.nz * 9 - 7, '#39415a', ry);
+
+    // pit garages, inside
+    const px = p.x - p.nx * (built.width / 2 + 9), pz = p.z - p.nz * (built.width / 2 + 9);
+    if (k > -20 && k < 10) {
+      gs.box(11, 5.5, 16, px, 2.75, pz, '#1d2331', ry);
+      gs.box(11.4, 0.6, 16.4, px, 5.8, pz, '#c8d0e0', ry);
+      gs.box(0.4, 3.2, 12, px + p.nx * 5.4, 1.9, pz, k % 2 ? '#39415a' : '#2b3244', ry);
     }
   }
   group.add(gs.mesh());

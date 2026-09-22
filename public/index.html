@@ -4,186 +4,307 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Apex Online</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e2334a'/%3E%3Cpath d='M7 22l9-13 9 13H19l-3-4.5L13 22z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23e2334a'/%3E%3Cpath d='M6 23L16 7l10 16h-6l-4-6.5L12 23z' fill='%23fff'/%3E%3C/svg%3E">
 <style>
   :root{
-    --bg:#05070d; --panel:#0b1018; --line:#1b2334; --ink:#e9edf5; --dim:#7b8699; --accent:#e2334a;
+    --bg:#04050a; --panel:#0b0e15; --line:#1a2130; --line2:#28324a;
+    --ink:#eef2f8; --dim:#78839a; --accent:#e2334a; --good:#3ddc84; --warn:#ffc46b;
+    --skew:-12deg;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
-    font:500 15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+    font:500 15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
   #c{display:block;position:fixed;inset:0}
-  button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:12px 18px;background:var(--accent);color:#fff;cursor:pointer}
-  button.ghost{background:#141b28;color:var(--ink);border:1px solid var(--line)}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  input{font:inherit;background:#0f1520;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:12px 14px}
-  .screen{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:24px;
-    background:radial-gradient(1200px 700px at 50% -10%,#141c2e 0%,#05070d 60%);overflow:auto;z-index:5}
-  .screen.on{display:flex}
-  .card{width:min(980px,100%);background:rgba(11,16,24,.92);border:1px solid var(--line);border-radius:18px;padding:26px}
-  .brand{font:800 34px/1 ui-sans-serif,system-ui;letter-spacing:.3em;color:var(--accent);margin-bottom:4px}
-  .tag{color:var(--dim);font-size:13px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:22px}
-  h2{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:22px 0 10px;font-weight:700}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .grid{display:grid;gap:10px}
-  .drivers{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
-  .tracks{grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
-  .opt .nm .pill{margin-left:6px;font-size:9px}
-  .opt{background:#0f1520;border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;transition:.12s}
-  .opt:hover{border-color:#31405c}
-  .opt.sel{border-color:var(--accent);background:#161320}
-  .opt.dis{opacity:.35;cursor:not-allowed}
-  .opt .nm{font-weight:700;font-size:14px}
-  .opt .sm{color:var(--dim);font-size:12px}
-  .swatch{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:1px}
-  .lobbywrap{display:grid;grid-template-columns:1fr 260px;gap:24px}
-  @media(max-width:760px){.lobbywrap{grid-template-columns:1fr}}
-  .qr{background:#fff;border-radius:14px;padding:10px;display:grid;place-items:center}
-  .qr svg{width:100%;height:auto;display:block}
-  .code{font:800 34px/1 ui-monospace,monospace;letter-spacing:.3em;text-align:center;margin:12px 0 4px}
-  .plist{display:grid;gap:8px;margin-top:6px}
-  .p{display:flex;align-items:center;justify-content:space-between;background:#0f1520;border:1px solid var(--line);
-     border-radius:10px;padding:10px 12px;font-size:14px}
-  .pill{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);
-        border-radius:99px;padding:3px 9px}
-  .pill.ok{color:#6ff0a4;border-color:#1d6b3c}
-  .pill.warn{color:#ffc66d;border-color:#6b501d}
-  .err{color:#ff8087;font-size:13px;min-height:18px;margin-top:8px}
-  .note{color:var(--dim);font-size:12px;margin-top:8px;line-height:1.6}
 
-  /* HUD */
+  /* ---------------------------------------------------------- primitives */
+  .num{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:800;font-style:italic;
+       letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .label{font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+
+  button{font:inherit;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border:0;cursor:pointer;
+    background:#161d2b;color:var(--ink);padding:13px 20px;font-size:13px;
+    clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);transition:.14s}
+  button:hover{background:#1f2941}
+  button.go{background:var(--accent);color:#fff}
+  button.go:hover{filter:brightness(1.12)}
+  button.on{background:var(--accent);color:#fff}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.sq{clip-path:none;padding:9px 13px;font-size:12px}
+  input{font:inherit;font-weight:700;background:#0a0e16;border:1px solid var(--line2);color:var(--ink);
+    padding:13px 15px;letter-spacing:.06em;outline:none}
+  input:focus{border-color:var(--accent)}
+
+  .screen{position:fixed;inset:0;display:none;flex-direction:column;z-index:5;
+    background:
+      repeating-linear-gradient(115deg,rgba(255,255,255,.014) 0 2px,transparent 2px 9px),
+      radial-gradient(1100px 620px at 50% -12%, #16203a 0%, #04050a 62%)}
+  .screen.on{display:flex}
+  .stripe{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .stripe i{position:absolute;top:-30%;height:160%;width:120px;transform:skewX(var(--skew));
+    background:linear-gradient(180deg,transparent,rgba(226,51,74,.07),transparent)}
+
+  /* ------------------------------------------------------------- chrome */
+  .topbar{display:flex;align-items:center;gap:18px;padding:16px 26px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(10,13,20,.95),rgba(10,13,20,.55));z-index:2}
+  .mark{font:900 italic 26px/1 ui-sans-serif,system-ui;letter-spacing:.16em;color:var(--ink)}
+  .mark s{color:var(--accent);text-decoration:none}
+  .roomchip{display:flex;align-items:center;gap:10px;background:#0c1119;border:1px solid var(--line2);
+    padding:7px 14px;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
+  .roomchip b{font:900 italic 20px/1 ui-monospace,monospace;letter-spacing:.24em}
+  .spacer{flex:1}
+
+  .body{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:22px;padding:22px 26px;overflow:auto}
+  @media(max-width:900px){.body{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .secthead{display:flex;align-items:center;gap:12px}
+  .secthead .bar{flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
+
+  /* --------------------------------------------------------- selections */
+  .cards{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
+  .card{position:relative;background:linear-gradient(160deg,#0d1220,#090c14);border:1px solid var(--line);
+    padding:11px 13px;cursor:pointer;transition:.14s;overflow:hidden}
+  .card:hover{border-color:var(--line2);transform:translateY(-1px)}
+  .card.sel{border-color:var(--accent);background:linear-gradient(160deg,#171320,#0b0d15)}
+  .card.sel:after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+  .card.dis{opacity:.35;pointer-events:none}
+  .card .nm{font-weight:800;font-size:15px}
+  .card .sub{font-size:10px;color:var(--dim);margin-top:2px;letter-spacing:.16em;text-transform:uppercase}
+  .card .blurb{font-size:12px;color:#8f9cb5;margin-top:8px;line-height:1.45}
+  .trackmap{width:100%;height:74px;margin:7px 0 2px;display:block}
+  .trackmap .road{fill:none;stroke:#6d7b94;stroke-width:7;stroke-linejoin:round;stroke-linecap:round}
+  .trackmap .line{fill:none;stroke:#aab6cc;stroke-width:2;stroke-dasharray:7 9}
+  .card.sel .trackmap .road{stroke:var(--accent);opacity:.8}
+  .stat{display:flex;gap:14px;margin-top:9px;font-size:10px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase}
+  .stat b{color:var(--ink);font-weight:800}
+
+  .dgrid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(188px,1fr))}
+  .dcard{position:relative;display:flex;align-items:center;gap:10px;background:#0b0f18;border:1px solid var(--line);
+    padding:9px 11px 9px 14px;cursor:pointer;transition:.12s;overflow:hidden}
+  .dcard:before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--tc,#555)}
+  .dcard:hover{border-color:var(--line2)}
+  .dcard.sel{border-color:var(--tc);background:#121722}
+  .dcard.dis{opacity:.26;pointer-events:none}
+  .dcard .no{font:900 italic 21px/1 ui-monospace,monospace;color:var(--tc);min-width:32px;text-align:right}
+  .dcard .who{min-width:0}
+  .dcard .who b{display:block;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dcard .who span{display:block;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  .helmet{width:13px;height:13px;border-radius:50% 50% 44% 44%;margin-left:auto;flex:none;border:1px solid rgba(255,255,255,.25)}
+
+  /* ------------------------------------------------------------ roster */
+  .roster{display:flex;flex-direction:column;gap:6px}
+  .rrow{display:flex;align-items:center;gap:10px;background:#0a0e16;border:1px solid var(--line);
+    padding:9px 12px;border-left:4px solid var(--tc,#333)}
+  .rrow .no{font:900 italic 15px/1 ui-monospace,monospace;color:var(--tc,#888);min-width:26px;text-align:right}
+  .rrow .who{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .rrow b{font-size:13px}
+  .rrow .sub{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .rrow .tag{margin-left:auto;display:flex;gap:6px}
+  .tag span{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:3px 7px;
+    border:1px solid var(--line2);color:var(--dim);white-space:nowrap}
+  .tag span.ok{color:var(--good);border-color:#1d5c3a}
+  .tag span.hot{color:var(--warn);border-color:#6b5320}
+
+  /* ------------------------------------------------------------ footer */
+  .footer{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 26px;border-top:1px solid var(--line);
+    background:linear-gradient(0deg,rgba(10,13,20,.96),rgba(10,13,20,.6))}
+  .setting{display:flex;align-items:center;gap:8px;background:#0a0e16;border:1px solid var(--line);padding:6px 10px}
+  .setting b{min-width:20px;text-align:center;font:900 italic 16px/1 ui-monospace,monospace}
+  .err{color:#ff8a93;font-size:12px}
+
+  .pairwrap{display:flex;gap:13px;align-items:center;background:#0a0e16;border:1px solid var(--line);padding:11px}
+  .qr{background:#fff;padding:6px;width:104px;height:104px;flex:none}
+  .qr svg{width:100%;height:100%;display:block}
+  .pairtext{font-size:11px;color:var(--dim);line-height:1.6;min-width:0;max-width:230px}
+  .pairtext b{color:var(--ink);font-size:12px}
+  .pairtext .u{color:#7f8fb0;word-break:break-all;font-size:10px}
+
+  /* -------------------------------------------------------------- HUD */
   #hud{position:fixed;inset:0;pointer-events:none;display:none;z-index:3}
   #hud.on{display:block}
-  .hl{position:absolute;background:rgba(7,11,18,.72);border:1px solid rgba(255,255,255,.07);
-      border-radius:14px;padding:10px 14px;backdrop-filter:blur(8px)}
-  #pos{left:20px;top:20px;display:flex;align-items:baseline;gap:8px}
-  #pos b{font-size:34px;line-height:1}
-  #pos span{font-size:12px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase}
-  #lap{left:20px;top:92px;font-size:13px;letter-spacing:.1em;color:var(--dim)}
-  #lap b{color:var(--ink);font-size:18px}
-  #speed{right:20px;bottom:20px;text-align:right}
-  #speed b{font:800 40px/1 ui-monospace,monospace}
-  #speed span{display:block;font-size:11px;letter-spacing:.2em;color:var(--dim)}
-  #times{right:20px;top:20px;text-align:right;font:600 13px/1.7 ui-monospace,monospace}
-  #times .k{color:var(--dim);font-size:11px;letter-spacing:.1em}
-  #board{left:20px;bottom:20px;font-size:13px;min-width:220px}
-  #board .r{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
-  #board .r.me{color:#ffd166}
-  #board .r i{color:var(--dim);font-style:normal;width:18px;display:inline-block}
-  #mini{position:absolute;right:20px;top:196px;width:170px;height:170px;background:rgba(7,11,18,.88);
-        border:1px solid rgba(255,255,255,.07);border-radius:14px}
-  #lights{position:absolute;left:50%;top:14%;transform:translateX(-50%);display:flex;gap:12px}
-  .light{width:42px;height:42px;border-radius:50%;background:#1a1f2b;border:2px solid #2a3244}
-  .light.on{background:var(--accent);box-shadow:0 0 26px var(--accent)}
-  #go{position:absolute;left:50%;top:26%;transform:translate(-50%,-50%);font:900 76px/1 ui-sans-serif,system-ui;
-      letter-spacing:.1em;color:#6ff0a4;opacity:0;transition:opacity .25s}
-  #flash{position:absolute;left:50%;top:38%;transform:translateX(-50%);font-size:14px;letter-spacing:.12em;
-         text-transform:uppercase;color:#ffd166;opacity:0;transition:opacity .3s}
-  #ctrlhint{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);font-size:12px;color:var(--dim);
-            background:rgba(7,11,18,.72);border:1px solid rgba(255,255,255,.07);border-radius:99px;padding:8px 16px}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
-  th{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .panel{position:absolute;background:linear-gradient(160deg,rgba(9,12,19,.87),rgba(9,12,19,.62));
+    border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(7px)}
+
+  #pos{left:24px;top:22px;padding:10px 22px 10px 16px;display:flex;align-items:center;gap:11px;
+       clip-path:polygon(0 0,100% 0,calc(100% - 14px) 100%,0 100%)}
+  #pos .p{font:900 italic 12px/1 ui-sans-serif;color:var(--dim);letter-spacing:.14em}
+  #posn{font:900 italic 42px/1 ui-monospace,monospace}
+  #posof{font-size:12px;color:var(--dim);font-weight:700}
+
+  #lap{left:24px;top:100px;padding:8px 16px;display:flex;align-items:baseline;gap:9px;
+       clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%)}
+  #lapn{font:900 italic 19px/1 ui-monospace,monospace}
+
+  #times{right:24px;top:22px;padding:11px 16px;min-width:170px}
+  #times .row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:2px 0}
+  #times .v{font:800 italic 15px/1 ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  #times .v.best{color:#b69cff}
+
+  #mini{position:absolute;right:24px;top:154px;width:184px;height:184px;
+        background:rgba(6,9,14,.95);border:1px solid rgba(255,255,255,.08)}
+
+  #speed{right:24px;bottom:24px;padding:12px 18px 18px;text-align:right;min-width:214px;
+         clip-path:polygon(14px 0,100% 0,100% 100%,0 100%)}
+  #kph{font:900 italic 54px/.9 ui-monospace,monospace;letter-spacing:-.03em}
+  #speed .u{font-size:10px;font-weight:800;letter-spacing:.3em;color:var(--dim);margin-left:5px}
+  .revs{height:7px;background:#141a25;margin-top:12px;margin-left:44px;display:flex;gap:2px}
+  .revs i{flex:1;background:#212a3a;transition:background .05s}
+  .revs i.lit{background:var(--accent)}
+  .revs i.red{background:#ff5f6d}
+  #gear{position:absolute;left:16px;bottom:14px;font:900 italic 34px/1 ui-monospace,monospace;color:var(--accent)}
+
+  #board{left:24px;bottom:24px;padding:10px 12px;min-width:244px;font-size:12px}
+  #board .r{display:flex;align-items:center;gap:9px;padding:3px 5px;border-left:3px solid transparent}
+  #board .r.me{background:rgba(255,255,255,.06);border-left-color:var(--accent)}
+  #board .r .i{font:900 italic 12px/1 ui-monospace,monospace;color:var(--dim);width:16px}
+  #board .r .n{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  #board .r .g{color:var(--dim);font:700 11px/1 ui-monospace,monospace}
+  #board .sw{width:3px;height:13px;flex:none}
+
+  #lights{position:absolute;left:50%;top:13%;transform:translateX(-50%);display:flex;gap:14px}
+  .light{width:46px;height:46px;border-radius:50%;background:#12161f;border:2px solid #232c3d;transition:.12s}
+  .light.on{background:#ff2d3f;border-color:#ff6470;box-shadow:0 0 30px rgba(255,45,63,.75)}
+  #go{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%) skewX(var(--skew));
+      font:900 italic 88px/1 ui-sans-serif;letter-spacing:.06em;color:var(--good);opacity:0;transition:opacity .22s}
+  #flash{position:absolute;left:50%;top:36%;transform:translateX(-50%);font:800 13px/1 ui-sans-serif;
+    letter-spacing:.24em;text-transform:uppercase;color:var(--warn);opacity:0;transition:opacity .3s;
+    background:rgba(8,11,17,.8);padding:9px 18px;border:1px solid rgba(255,196,107,.3)}
+  #ctrlhint{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);font-size:11px;font-weight:700;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--dim);background:rgba(8,11,17,.8);
+    border:1px solid rgba(255,255,255,.08);padding:8px 18px}
+
+  /* ---------------------------------------------------------- results */
+  .rtable{width:100%;border-collapse:collapse}
+  .rtable th{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);text-align:left;padding:8px 10px}
+  .rtable td{padding:11px 10px;border-top:1px solid var(--line);font-size:14px}
+  .rtable tr.me td{background:rgba(226,51,74,.09)}
+  .rtable .pos{font:900 italic 18px/1 ui-monospace,monospace;width:46px}
+  .rtable .sw{display:inline-block;width:4px;height:15px;margin-right:9px;vertical-align:-3px}
+  .rtable .t{font:700 13px/1 ui-monospace,monospace}
+  .rtable .team{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 </style>
 </head>
 <body>
 
 <canvas id="c"></canvas>
 
-<!-- ------------------------------------------------ landing -->
+<!-- ---------------------------------------------------------- landing -->
 <div class="screen on" id="s-home">
-  <div class="card" style="max-width:520px">
-    <div class="brand">APEX</div>
-    <div class="tag">Online open-wheel racing</div>
-    <h2>Your name</h2>
-    <input id="name" maxlength="14" placeholder="Veer" style="width:100%">
-    <h2>Start</h2>
-    <div class="row">
-      <button id="create">Create a race</button>
-      <input id="joincode" maxlength="4" placeholder="CODE" style="width:120px;text-transform:uppercase;letter-spacing:.2em">
-      <button class="ghost" id="join">Join</button>
+  <div class="stripe"><i style="left:12%"></i><i style="left:27%"></i><i style="left:73%"></i></div>
+  <div style="margin:auto;width:min(460px,92vw)">
+    <div class="mark" style="font-size:54px;margin-bottom:6px">APEX<s>//</s></div>
+    <div class="label" style="margin-bottom:26px">Online open-wheel racing</div>
+
+    <div class="label" style="margin-bottom:7px">Driver name</div>
+    <input id="name" maxlength="14" placeholder="VEER" style="width:100%;margin-bottom:18px">
+
+    <div style="display:flex;gap:9px;flex-wrap:wrap">
+      <button class="go" id="create">Create race</button>
+      <input id="joincode" maxlength="4" placeholder="CODE" style="width:112px;text-transform:uppercase;letter-spacing:.24em;text-align:center">
+      <button id="join">Join</button>
     </div>
-    <div class="err" id="homeerr"></div>
-    <div class="note">Everyone plays on their own screen. Each player pairs a phone as their controller, or drives with the arrow keys.</div>
+    <div class="err" id="homeerr" style="margin-top:12px;min-height:16px"></div>
+    <div style="margin-top:20px;font-size:12px;color:var(--dim);line-height:1.7">
+      Every driver races on their own screen. Pair a phone as your wheel, or use the arrow keys.
+    </div>
   </div>
 </div>
 
-<!-- ------------------------------------------------ lobby -->
+<!-- ------------------------------------------------------------ lobby -->
 <div class="screen" id="s-lobby">
-  <div class="card">
-    <div class="lobbywrap">
-      <div>
-        <div class="brand" style="font-size:24px">APEX</div>
-        <div class="tag">Lobby</div>
+  <div class="topbar">
+    <div class="mark">APEX<s>//</s></div>
+    <div class="roomchip"><span class="label">Room</span><b id="code">----</b></div>
+    <div class="roomchip"><span class="label">Grid</span><b id="gridcount" style="font-size:16px">0</b></div>
+    <div class="spacer"></div>
+    <div class="label" id="hostonly"></div>
+  </div>
 
-        <h2>Drivers in this race</h2>
-        <div class="plist" id="plist"></div>
+  <div class="body">
+    <div class="col">
+      <div class="secthead"><span class="label">Circuit</span><span class="bar"></span></div>
+      <div class="cards" id="tracks"></div>
+    </div>
 
-        <h2>Pick your driver</h2>
-        <div class="grid drivers" id="drivers"></div>
+    <div class="col">
+      <div class="secthead"><span class="label">Choose your car</span><span class="bar"></span></div>
+      <div class="dgrid" id="drivers"></div>
 
-        <h2>Circuit <span id="hostonly" style="text-transform:none;letter-spacing:0">(host picks)</span></h2>
-        <div class="grid tracks" id="tracks"></div>
+      <div class="secthead" style="margin-top:8px"><span class="label">Drivers in this race</span><span class="bar"></span></div>
+      <div class="roster" id="plist"></div>
+    </div>
+  </div>
 
-        <h2>Race</h2>
-        <div class="row">
-          <span class="pill">Laps</span>
-          <button class="ghost" data-laps="-1">–</button><b id="laps">3</b><button class="ghost" data-laps="1">+</button>
-          <span class="pill" style="margin-left:14px">AI cars</span>
-          <button class="ghost" data-ai="-1">–</button><b id="ai">3</b><button class="ghost" data-ai="1">+</button>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <span class="pill">AI pace</span>
-          <button class="ghost" data-skill="0.86">Relaxed</button>
-          <button class="ghost" data-skill="0.94">Standard</button>
-          <button class="ghost" data-skill="1">Pro</button>
-        </div>
+  <div class="footer">
+    <div class="setting"><span class="label">Laps</span>
+      <button class="sq" data-laps="-1">–</button><b id="laps">3</b><button class="sq" data-laps="1">+</button></div>
+    <div class="setting"><span class="label">AI</span>
+      <button class="sq" data-ai="-1">–</button><b id="ai">7</b><button class="sq" data-ai="1">+</button></div>
+    <div class="setting"><span class="label">Pace</span>
+      <button class="sq" data-skill="0.86">Relaxed</button>
+      <button class="sq" data-skill="0.94">Standard</button>
+      <button class="sq" data-skill="1">Pro</button></div>
 
-        <div class="row" style="margin-top:22px">
-          <button id="ready">I'm ready</button>
-          <button id="start" class="ghost">Start race</button>
-        </div>
-        <div class="err" id="lobbyerr"></div>
-      </div>
-
-      <div>
-        <h2 style="margin-top:0">Pair your phone</h2>
-        <div class="qr" id="qr"></div>
-        <div class="code" id="code">----</div>
-        <div class="note" id="pairnote">Scan with your phone camera, or open the link below and type the code and key.</div>
-        <div class="note" id="pairurl" style="word-break:break-all;color:#8fa0bd"></div>
-        <div class="note">No phone? Arrow keys or WASD work on this screen.</div>
+    <div class="pairwrap">
+      <div class="qr" id="qr"></div>
+      <div class="pairtext">
+        <b>Pair your phone</b><br>Scan this on your own screen.<br>
+        <span class="u" id="pairurl"></span>
       </div>
     </div>
+
+    <div class="spacer"></div>
+    <div class="err" id="lobbyerr"></div>
+    <button id="ready">I'm ready</button>
+    <button class="go" id="start">Start race</button>
   </div>
 </div>
 
-<!-- ------------------------------------------------ results -->
+<!-- ---------------------------------------------------------- results -->
 <div class="screen" id="s-results">
-  <div class="card" style="max-width:720px">
-    <div class="brand" style="font-size:24px">APEX</div>
-    <div class="tag" id="rtitle">Race classification</div>
-    <table><thead><tr><th>Pos</th><th>Driver</th><th>Time</th><th>Best lap</th></tr></thead>
-    <tbody id="rbody"></tbody></table>
-    <div class="row" style="margin-top:22px">
-      <button id="again">Back to lobby</button>
+  <div class="topbar">
+    <div class="mark">APEX<s>//</s></div>
+    <div class="label" id="rtitle">Classification</div>
+    <div class="spacer"></div>
+    <button class="go" id="again">Back to garage</button>
+  </div>
+  <div class="body" style="grid-template-columns:1fr">
+    <div class="col" style="max-width:840px;width:100%;margin:0 auto">
+      <table class="rtable">
+        <thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th>Time</th><th>Best lap</th></tr></thead>
+        <tbody id="rbody"></tbody>
+      </table>
     </div>
   </div>
 </div>
 
-<!-- ------------------------------------------------ hud -->
+<!-- -------------------------------------------------------------- HUD -->
 <div id="hud">
-  <div class="hl" id="pos"><b id="posn">1</b><span>pos</span></div>
-  <div class="hl" id="lap">LAP <b id="lapn">1/3</b></div>
-  <div class="hl" id="times"><div class="k">CURRENT</div><div id="tcur">0.00</div><div class="k">BEST</div><div id="tbest">--.--</div>
-    <div class="k" style="margin-top:6px">PING</div><div id="ping">-- ms</div></div>
-  <div class="hl" id="speed"><b id="kph">0</b><span>km/h</span></div>
-  <div class="hl" id="board"></div>
-  <canvas id="mini" width="340" height="340"></canvas>
-  <div id="lights"><div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div></div>
+  <div class="panel" id="pos"><span class="p">POS</span><span id="posn">1</span><span id="posof">/8</span></div>
+  <div class="panel" id="lap"><span class="label">Lap</span><span id="lapn">1/3</span></div>
+
+  <div class="panel" id="times">
+    <div class="row"><span class="label">Lap</span><span class="v" id="tcur">0.00</span></div>
+    <div class="row"><span class="label">Best</span><span class="v best" id="tbest">--.--</span></div>
+    <div class="row"><span class="label">Ping</span><span class="v" id="ping" style="font-size:12px">--</span></div>
+  </div>
+
+  <canvas id="mini" width="368" height="368"></canvas>
+
+  <div class="panel" id="speed">
+    <span id="kph">0</span><span class="u">KM/H</span>
+    <div class="revs" id="revs"></div>
+    <span id="gear">N</span>
+  </div>
+
+  <div class="panel" id="board"></div>
+
+  <div id="lights">
+    <div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div>
+  </div>
   <div id="go">GO</div>
   <div id="flash"></div>
-  <div id="ctrlhint">Phone not paired — using arrow keys</div>
+  <div id="ctrlhint">Arrow keys or WASD</div>
 </div>
 
 <script type="module" src="./js/main.js"></script>

@@ -1,16 +1,8 @@
 // Shared between server and browser. Pure ESM, no runtime dependencies.
-import { SAKHIR, NORTHANTS, ARDENNES } from './circuits.js';
+import { SAKHIR, SILVERSTONE, SPA_ } from './circuits.js';
+import { DRIVERS } from './drivers.js';
 
-export const DRIVERS = [
-  { id: 'kaito',  name: 'Kaito Renn',     team: 'Vantari',    color: '#e2334a', trim: '#ffd166', accel: 1.00, top: 1.00, grip: 1.00 },
-  { id: 'noor',   name: 'Noor Bashir',    team: 'Solaxis',    color: '#f5a524', trim: '#1b2230', accel: 1.05, top: 0.96, grip: 1.02 },
-  { id: 'vance',  name: 'Elias Vance',    team: 'Ardent',     color: '#3a7bd5', trim: '#e9edf5', accel: 0.95, top: 1.05, grip: 0.98 },
-  { id: 'mira',   name: 'Mira Okonkwo',   team: 'Kestrel',    color: '#28c76f', trim: '#0d1018', accel: 1.02, top: 0.99, grip: 1.03 },
-  { id: 'rook',   name: 'Dmitri Rook',    team: 'Nordvik',    color: '#a66bff', trim: '#e9edf5', accel: 0.98, top: 1.03, grip: 0.97 },
-  { id: 'silva',  name: 'Tomas Silva',    team: 'Verano',     color: '#00d1d1', trim: '#0d1018', accel: 1.03, top: 0.97, grip: 1.01 },
-  { id: 'anaya',  name: 'Anaya Deshmukh', team: 'Meridian',   color: '#ff6f91', trim: '#2b1721', accel: 1.01, top: 1.01, grip: 1.00 },
-  { id: 'hale',   name: 'Brett Hale',     team: 'Copperline', color: '#c9d1d9', trim: '#e2334a', accel: 0.97, top: 1.04, grip: 0.99 }
-];
+export { DRIVERS, TEAMS, driverById } from './drivers.js';
 
 // Fictional layouts are authored in polar form (radius at a given angle), which
 // can never produce a loop that crosses itself.
@@ -25,34 +17,38 @@ export const TRACKS = [
   {
     id: 'sakhir',
     name: 'Sakhir',
-    blurb: 'The desert night race. Heavy braking into turn one, three real overtaking spots.',
+    country: 'Bahrain',
+    blurb: 'Desert night race. Huge braking zone into turn one, three genuine overtaking spots.',
     real: true, width: 14, laps: 2, runoff: 15,
     theme: { sky: '#0e1430', sky2: '#3a2a44', ground: '#c8a06a', ground2: '#b38f5e', asphalt: '#3a3f46', kerb: '#d8443a',
               runoff: '#8a6a42', desert: true, rock: '#9c7b4e', rock2: '#87683f', fence: '#2f3545', night: true },
     points: SAKHIR
   },
   {
-    id: 'northants',
-    name: 'Northants',
-    blurb: 'Fast, open and flowing. The high-speed sweeper sequence is the whole lap.',
+    id: 'silverstone',
+    name: 'Silverstone',
+    country: 'Great Britain',
+    blurb: 'Fast, open and flowing. The high-speed sweepers are the whole lap.',
     real: true, width: 14, laps: 2, runoff: 15,
     theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a',
               runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#39405180' },
-    points: NORTHANTS
+    points: SILVERSTONE
   },
   {
-    id: 'ardennes',
-    name: 'Ardennes',
-    blurb: 'Forest classic. The uphill left-right at the bottom, then a very long flat-out blast.',
+    id: 'spa',
+    name: 'Spa',
+    country: 'Belgium',
+    blurb: 'Forest classic. Steep uphill left-right, then the longest flat-out run in the game.',
     real: true, width: 13, laps: 2, runoff: 13,
     theme: { sky: '#6d8aa6', sky2: '#c3d2de', ground: '#41763c', ground2: '#356032', asphalt: '#40454b', kerb: '#d8443a',
               runoff: '#6b7078', tree: '#27592c', tree2: '#35723a', fence: '#39414f' },
-    points: ARDENNES
+    points: SPA_
   },
   {
     id: 'kestrel',
     name: 'Kestrel Ring',
-    blurb: 'Fictional. Long straights and heavy braking zones. Slipstream country.',
+    country: 'Invented',
+    blurb: 'Long straights and heavy braking. Slipstream country.',
     width: 15, laps: 3, runoff: 7,
     theme: { sky: '#6fb3dd', sky2: '#cfe7f5', ground: '#478a4d', ground2: '#3b7442', asphalt: '#42474e', kerb: '#d8443a',
               runoff: '#70767f', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
@@ -66,7 +62,8 @@ export const TRACKS = [
   {
     id: 'cobalt',
     name: 'Cobalt Bay',
-    blurb: 'Fictional street circuit. Walls close, mistakes expensive.',
+    country: 'Invented',
+    blurb: 'Street circuit under lights. Walls close, mistakes expensive.',
     width: 12, laps: 3, runoff: 4,
     theme: { sky: '#101a2e', sky2: '#32455f', ground: '#2f3847', ground2: '#28303d', asphalt: '#383d44', kerb: '#e8e8e8',
               runoff: '#4a515e', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
@@ -148,7 +145,7 @@ export function buildTrack(track, spacing = SPACING) {
   }
 
   return {
-    id: track.id, name: track.name, width: track.width, theme: track.theme,
+    id: track.id, name: track.name, country: track.country, width: track.width, theme: track.theme,
     laps: track.laps || 3, real: !!track.real,
     runoff: track.runoff || 6,        // metres of asphalt before the barrier
     line, length: acc, step

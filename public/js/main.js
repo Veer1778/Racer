@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { TRACKS, DRIVERS, getTrack } from '../shared/tracks.js';
+import { TRACKS, DRIVERS, TEAMS, getTrack, buildTrack } from '../shared/tracks.js';
 import { trackFor, gridCar, stepCar, driverOf, TUNE } from '../shared/sim.js';
 import { carGeometry, buildWorld } from './scene.js';
 
@@ -77,55 +77,98 @@ $('#joincode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#joi
 
 /* ---------------------------------------------------------------- lobby */
 
+// Circuit outlines are drawn from the same centreline the race uses, so the
+// selector shows the layout you are actually about to drive.
+const mapCache = new Map();
+function trackMap(track) {
+  if (mapCache.has(track.id)) return mapCache.get(track.id);
+  const b = buildTrack(track, 12);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const p of b.line) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+  const W = 200, H = 96, pad = 12;
+  const sc = Math.min((W - pad * 2) / (x1 - x0), (H - pad * 2) / (z1 - z0));
+  const ox = (W - (x1 - x0) * sc) / 2, oz = (H - (z1 - z0) * sc) / 2;
+  const step = Math.max(1, Math.round(b.line.length / 150));
+  let d = '';
+  for (let i = 0; i < b.line.length; i += step) {
+    const p = b.line[i];
+    d += (d ? 'L' : 'M') + (ox + (p.x - x0) * sc).toFixed(1) + ' ' + (H - (oz + (p.z - z0) * sc)).toFixed(1) + ' ';
+  }
+  d += 'Z';
+  const svg = `<svg class="trackmap" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+      <path class="road" d="${d}"/><path class="line" d="${d}"/></svg>`;
+  const out = { svg, length: b.length };
+  mapCache.set(track.id, out);
+  return out;
+}
+
 function renderLobby() {
   if (!lobby) return;
   if (lobby.state === 'lobby') show('s-lobby');
   $('#code').textContent = lobby.code;
   $('#laps').textContent = lobby.laps;
   $('#ai').textContent = lobby.aiCount;
+  $('#gridcount').textContent = lobby.players.length + lobby.aiCount;
   me.host = lobby.hostId === me.pid;
   $('#start').style.display = me.host ? '' : 'none';
-  $('#hostonly').textContent = me.host ? '' : '(host picks)';
+  $('#hostonly').textContent = me.host ? 'You are the host' : 'Host controls the circuit';
   document.querySelectorAll('[data-skill]').forEach(b =>
-    b.style.borderColor = Math.abs(+b.dataset.skill - lobby.aiSkill) < 0.01 ? 'var(--accent)' : 'var(--line)');
+    b.classList.toggle('on', Math.abs(+b.dataset.skill - lobby.aiSkill) < 0.01));
 
-  // The pairing link must be whatever this page was opened on, so it works on a
-  // LAN address, a tunnel or a deployed host without any configuration.
+  // The pairing link uses this page's own origin, so it works on a LAN address,
+  // a tunnel or a deployed host with no configuration.
   const url = `${location.origin}/c#${lobby.code}-${me.token}`;
-  $('#pairurl').textContent = url;
+  $('#pairurl').textContent = url.replace(/^https?:\/\//, '');
   if ($('#qr').dataset.url !== url) {
     $('#qr').dataset.url = url;
     fetch('/qr?d=' + encodeURIComponent(url)).then(r => r.text()).then(svg => { $('#qr').innerHTML = svg; });
   }
 
-  const taken = new Set(lobby.players.filter(p => p.pid !== me.pid).map(p => p.driverId));
   const mine = lobby.players.find(p => p.pid === me.pid);
-  $('#drivers').innerHTML = DRIVERS.map(d => `
-    <div class="opt ${mine && mine.driverId === d.id ? 'sel' : ''} ${taken.has(d.id) ? 'dis' : ''}" data-drv="${d.id}">
-      <div class="nm"><span class="swatch" style="background:${d.color}"></span>${d.name}</div>
-      <div class="sm">${d.team}</div>
-    </div>`).join('');
+  if (mine) {
+    const d = DRIVERS.find(x => x.id === mine.driverId);
+    if (d) document.documentElement.style.setProperty('--accent', d.color);
+  }
 
-  $('#tracks').innerHTML = TRACKS.map(t => `
-    <div class="opt ${lobby.trackId === t.id ? 'sel' : ''} ${me.host ? '' : 'dis'}" data-trk="${t.id}">
-      <div class="nm">${t.name} ${t.real ? '<span class="pill">real layout</span>' : ''}</div>
-      <div class="sm">${t.blurb}</div>
+  $('#tracks').innerHTML = TRACKS.map(t => {
+    const m = trackMap(t);
+    return `<div class="card ${lobby.trackId === t.id ? 'sel' : ''} ${me.host ? '' : 'dis'}" data-trk="${t.id}">
+      <div class="nm">${t.name}</div>
+      <div class="sub">${t.country}</div>
+      ${m.svg}
+      <div class="stat"><span>Length <b>${(m.length / 1000).toFixed(1)} km</b></span>
+        <span>Laps <b>${t.laps || 3}</b></span></div>
+      <div class="blurb">${t.blurb}</div>
+    </div>`;
+  }).join('');
+
+  const taken = new Set(lobby.players.filter(p => p.pid !== me.pid).map(p => p.driverId));
+  const short = n => n.length > 12 ? n[0] + '. ' + n.split(' ').slice(1).join(' ') : n;
+  $('#drivers').innerHTML = DRIVERS.map(d => `
+    <div class="dcard ${mine && mine.driverId === d.id ? 'sel' : ''} ${taken.has(d.id) ? 'dis' : ''}"
+         data-drv="${d.id}" style="--tc:${d.color}">
+      <span class="no">${d.no}</span>
+      <span class="who"><b>${short(d.name)}</b><span>${d.team}</span></span>
+      <span class="helmet" style="background:${d.helmet}"></span>
     </div>`).join('');
 
   $('#plist').innerHTML = lobby.players.map(p => {
     const d = DRIVERS.find(x => x.id === p.driverId) || DRIVERS[0];
-    return `<div class="p">
-      <span><span class="swatch" style="background:${d.color}"></span><b>${esc(p.name)}</b>
-        <span style="color:var(--dim)"> · ${d.name}</span>${p.pid === lobby.hostId ? ' <span class="pill">host</span>' : ''}</span>
-      <span>${p.ctrl ? '<span class="pill ok">phone</span>' : '<span class="pill warn">keys</span>'}
-        ${p.ready ? '<span class="pill ok">ready</span>' : '<span class="pill">waiting</span>'}</span>
-    </div>`;
+    return `<div class="rrow" style="--tc:${d.color}">
+      <span class="no">${d.no}</span>
+      <span class="who"><b>${esc(p.name)}</b><span class="sub">${d.name} · ${d.team}</span></span>
+      <span class="tag">
+        ${p.pid === lobby.hostId ? '<span>Host</span>' : ''}
+        ${p.ctrl ? '<span class="ok">Phone</span>' : '<span>Keys</span>'}
+        ${p.ready ? '<span class="ok">Ready</span>' : '<span class="hot">Waiting</span>'}
+      </span></div>`;
   }).join('');
 
   const allReady = lobby.players.length > 0 && lobby.players.every(p => p.ready);
   $('#start').disabled = !allReady;
-  $('#start').textContent = allReady ? 'Start race' : 'Waiting for drivers…';
-  if (mine) $('#ready').textContent = mine.ready ? 'Not ready' : "I'm ready";
+  $('#start').textContent = allReady ? 'Start race' : 'Waiting…';
+  $('#ready').classList.toggle('on', !!(mine && mine.ready));
+  if (mine) $('#ready').textContent = mine.ready ? 'Ready' : "I'm ready";
 }
 
 $('#drivers').onclick = e => { const o = e.target.closest('[data-drv]'); if (o && !o.classList.contains('dis')) send({ t: 'pick', driverId: o.dataset.drv }); };
@@ -269,7 +312,7 @@ function startRace(m) {
 
   m.grid.forEach((c, i) => {
     const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
-    const mesh = new THREE.Mesh(carGeometry(d.color, d.trim),
+    const mesh = new THREE.Mesh(carGeometry(d.color, d.trim, d.helmet),
       new THREE.MeshLambertMaterial({ vertexColors: true }));
     scene.add(mesh);
     carMeshes.set(c.id, { mesh, name: c.n, driver: d, bot: c.bot });
@@ -328,16 +371,20 @@ const fmt = t => {
 
 function showResults(m) {
   stopRace();
+  const winner = m.results[0];
   $('#rbody').innerHTML = m.results.map((r, i) => {
     const d = DRIVERS.find(x => x.id === r.driverId) || DRIVERS[0];
-    return `<tr${r.pid === me.pid ? ' style="color:#ffd166"' : ''}>
-      <td>${i + 1}</td>
-      <td><span class="swatch" style="background:${d.color}"></span>${esc(r.name)}${r.bot ? ' <span class="pill">AI</span>' : ''}</td>
-      <td>${r.time ? fmt(r.time) : 'DNF'}</td>
-      <td>${r.best ? fmt(r.best) : '--'}</td></tr>`;
+    const gap = r.time && winner.time && i > 0 ? '+' + fmt(r.time - winner.time) : (r.time ? fmt(r.time) : 'DNF');
+    return `<tr class="${r.pid === me.pid ? 'me' : ''} ${i < 3 ? 'podium' : ''}">
+      <td class="pos">${i + 1}</td>
+      <td><span class="sw" style="background:${d.color}"></span><b>${esc(r.name)}</b>${r.bot ? ' <span class="team">AI</span>' : ''}</td>
+      <td class="team">${d.team}</td>
+      <td class="t">${gap}</td>
+      <td class="t">${r.best ? fmt(r.best) : '--'}</td></tr>`;
   }).join('');
-  $('#rtitle').textContent = getTrack(m.trackId).name + ' · classification';
-  $('#again').textContent = me.host ? 'Back to lobby' : 'Waiting for host…';
+  $('#rtitle').textContent = getTrack(m.trackId).name + ' — classification';
+  $('#again').textContent = me.host ? 'Back to garage' : 'Waiting for host';
+  $('#again').disabled = !me.host;
   show('s-results');
 }
 
@@ -423,14 +470,34 @@ function render() {
 }
 render();
 
+const revCells = (() => {
+  const el = $('#revs');
+  el.innerHTML = Array.from({ length: 14 }, () => '<i></i>').join('');
+  return [...el.children];
+})();
+
 function hud(snap, speed) {
   const srv = snap.cars.get(me.pid);
+  const cars = [...snap.cars.values()].sort((a, b) => a.pos - b.pos);
   $('#posn').textContent = srv ? srv.pos : 1;
+  $('#posof').textContent = '/' + cars.length;
   $('#lapn').textContent = `${Math.min(lapCount, Math.max(1, my.car.lap + 1))}/${lapCount}`;
   $('#kph').textContent = Math.round(speed * 3.6);
   $('#tbest').textContent = my.car.best ? fmt(my.car.best) : '--.--';
   $('#tcur').textContent = fmt(Math.max(0, srv ? srv.cur : 0));
-  $('#ping').textContent = Math.round(rtt) + ' ms';
+  $('#ping').textContent = Math.round(rtt) + 'ms';
+
+  // gears are cosmetic: eight bands across the car's speed range, with the
+  // rev bar filling inside whichever band the car is in
+  const top = 82 * my.drv.top;
+  const band = Math.min(0.999, speed / top) * 8;
+  const gear = Math.max(1, Math.ceil(band));
+  const revs = speed < 0.5 ? 0 : band - (gear - 1);
+  $('#gear').textContent = speed < 0.5 ? 'N' : gear;
+  const lit = Math.round(revs * revCells.length);
+  revCells.forEach((c, i) => {
+    c.className = i < lit ? (i >= revCells.length - 3 ? 'red' : 'lit') : '';
+  });
 
   if (my.car.lap !== lastLap) {
     lastLap = my.car.lap;
@@ -440,16 +507,24 @@ function hud(snap, speed) {
   stuckFor = (speed < 3 && !my.car.finished) ? stuckFor + 1 : 0;
   $('#ctrlhint').textContent =
     left ? `Race ends in ${Math.ceil(left)}s`
-    : stuckFor > 70 ? (hasCtrl ? 'Stuck? Tap REJOIN on your phone' : 'Stuck? Press R to rejoin')
+    : stuckFor > 70 ? (hasCtrl ? 'Stuck? Tap rejoin on your phone' : 'Stuck? Press R to rejoin')
     : (hasCtrl ? 'Phone controller connected' : 'Arrow keys or WASD');
 
-  const ord = [...snap.cars.values()].sort((a, b) => a.pos - b.pos);
-  $('#board').innerHTML = ord.map(c =>
-    `<div class="r ${c.id === me.pid ? 'me' : ''}"><span><i>${c.pos}</i>${esc(c.n)}</span>
-     <span style="color:${(DRIVERS.find(d => d.id === c.d) || {}).color}">●</span></div>`).join('');
+  // gaps: distance behind the leader, expressed as time at the current pace
+  const leader = cars[0];
+  $('#board').innerHTML = cars.map(c => {
+    const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
+    const behind = (leader.pr || 0) - (c.pr || 0);
+    const gap = c.pos === 1 ? 'LEAD' : '+' + (behind / Math.max(25, speed)).toFixed(1);
+    return `<div class="r ${c.id === me.pid ? 'me' : ''}">
+      <span class="i">${c.pos}</span>
+      <span class="sw" style="background:${d.color}"></span>
+      <span class="n">${esc(c.n)}</span>
+      <span class="g">${gap}</span></div>`;
+  }).join('');
 
   if (audio) {
-    const f = 48 + speed * 3.2;
+    const f = 46 + speed * 3.1 + revs * 26;
     audio.osc.frequency.setTargetAtTime(f, audio.ctx.currentTime, 0.04);
     audio.sub.frequency.setTargetAtTime(f / 2, audio.ctx.currentTime, 0.04);
     audio.gain.gain.setTargetAtTime(Math.min(0.06, 0.014 + speed / 2400), audio.ctx.currentTime, 0.08);

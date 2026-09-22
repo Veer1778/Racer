@@ -5,7 +5,7 @@ import os from 'os';
 import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { TRACKS, DRIVERS, getTrack } from './public/shared/tracks.js';
+import { TRACKS, DRIVERS, TEAMS, getTrack } from './public/shared/tracks.js';
 import { trackFor, gridCar, aiInput, stepCar, separate, driverOf } from './public/shared/sim.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,8 @@ const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/info', (req, res) => {
-  res.json({ lan: lanAddress(), port: PORT, tracks: TRACKS.map(t => ({ id: t.id, name: t.name, blurb: t.blurb })), drivers: DRIVERS });
+  res.json({ lan: lanAddress(), port: PORT, drivers: DRIVERS, teams: TEAMS,
+             tracks: TRACKS.map(t => ({ id: t.id, name: t.name, country: t.country, blurb: t.blurb })) });
 });
 
 app.get('/qr', async (req, res) => {
@@ -55,7 +56,7 @@ function newRoom() {
     hostId: null,
     trackId: TRACKS[0].id,
     laps: TRACKS[0].laps || 3,
-    aiCount: 3,
+    aiCount: 7,
     aiSkill: 0.94,
     state: 'lobby',       // lobby | countdown | racing | results
     players: new Map(),
@@ -178,7 +179,7 @@ function snapshot(room) {
       x: +p.car.x.toFixed(2), z: +p.car.z.toFixed(2), h: +p.car.h.toFixed(3),
       v: +p.car.v.toFixed(1), lap: Math.max(0, p.car.lap), pos: posOf.get(p.pid),
       off: p.car.off, fin: p.car.finished, best: p.car.best, q: p.seq || 0,
-      hint: p.car.hint, pd: +p.car.prevDist.toFixed(2),
+      hint: p.car.hint, pd: +p.car.prevDist.toFixed(2), pr: +p.car.progress.toFixed(1),
       in: p.bot ? undefined : { s: +(p.input.s || 0).toFixed(2), g: p.input.g || 0, b: p.input.b || 0 },
       cur: +Math.max(0, room.raceTime - p.car.lapStart).toFixed(2)
     }))
@@ -241,7 +242,10 @@ function endRace(room) {
 function startRace(room) {
   if (room.state === 'countdown' || room.state === 'racing') return;
   for (const p of [...room.players.values()]) if (p.bot) room.players.delete(p.pid);
-  for (let i = 0; i < room.aiCount; i++) addPlayer(room, ['Renn', 'Bashir', 'Vance', 'Okonkwo', 'Rook', 'Silva', 'Deshmukh'][i % 7], null, true);
+  for (let i = 0; i < room.aiCount; i++) {
+    const bot = addPlayer(room, 'AI', null, true);
+    bot.name = driverOf(bot.driverId).name;
+  }
   room.results = [];
   resetGrid(room);
   room.state = 'countdown';
@@ -286,7 +290,7 @@ wss.on('connection', (ws) => {
         const r = rooms.get(String(m.code || '').toUpperCase());
         if (!r) return send(ws, { t: 'err', msg: 'No room with that code.' });
         if (r.state !== 'lobby') return send(ws, { t: 'err', msg: 'That race has already started.' });
-        if ([...r.players.values()].filter(x => !x.bot).length >= 8) return send(ws, { t: 'err', msg: 'Room is full.' });
+        if ([...r.players.values()].filter(x => !x.bot).length >= 12) return send(ws, { t: 'err', msg: 'Room is full.' });
         const p = addPlayer(r, m.name, ws);
         ws.meta = { code: r.code, pid: p.pid, role: 'game' };
         send(ws, { t: 'joined', pid: p.pid, token: p.token, code: r.code, host: r.hostId === p.pid });
@@ -335,7 +339,7 @@ wss.on('connection', (ws) => {
           room.laps = getTrack(m.trackId).laps || 3;   // real circuits default to fewer laps
         }
         if (m.laps) room.laps = Math.max(1, Math.min(10, m.laps | 0));
-        if (m.aiCount !== undefined) room.aiCount = Math.max(0, Math.min(6, m.aiCount | 0));
+        if (m.aiCount !== undefined) room.aiCount = Math.max(0, Math.min(15, m.aiCount | 0));
         if (m.aiSkill) room.aiSkill = Math.max(0.8, Math.min(1, +m.aiSkill));
         pushLobby(room);
         break;

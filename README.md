@@ -4,8 +4,7 @@ Online open-wheel racing in the browser. Every player has their own screen and
 pairs a phone as a steering wheel by scanning a QR code. Five circuits, three of
 them the real layouts of well known venues, traced from open geographic data.
 
-Drivers, teams and liveries are all invented, and the circuits carry geographic
-names rather than trademarked ones.
+The grid is twenty invented drivers across ten teams, renameable in one file.
 
 ## Run it
 
@@ -44,29 +43,51 @@ at whatever angle you're holding. "Touch steering" swaps tilt for a drag bar.
 
 **No phone.** Arrow keys or WASD, space to brake, **R** to rejoin the track.
 
+If tilt steers the wrong way on your handset, the controller has a
+**Steering: normal / inverted** toggle and it remembers the choice. Which axis
+reads as "roll the phone like a wheel" depends on which way the phone was turned
+into landscape, and not every handset reports that the same way.
+
 **Host settings:** circuit, laps, number of AI cars, AI pace. A car stuck against
 a barrier for six seconds rejoins automatically.
 
 ## Circuits
 
-| Circuit | Length | Based on |
+| Circuit | Length | Notes |
 |---|---|---|
-| Sakhir | 5.3 km | the Bahrain layout, run at night |
-| Northants | 5.8 km | the Silverstone layout |
-| Ardennes | 6.9 km | the Spa layout |
-| Kestrel Ring | 1.8 km | fictional, long straights |
-| Cobalt Bay | 1.3 km | fictional street circuit |
+| Sakhir | 5.3 km | Bahrain layout, run at night |
+| Silverstone | 5.8 km | fast and open |
+| Spa | 6.9 km | longest lap in the game |
+| Kestrel Ring | 1.8 km | invented, long straights |
+| Cobalt Bay | 1.3 km | invented street circuit |
 
 Real layouts come from the open `f1-circuits` GeoJSON dataset, projected to
 metres, smoothed and resampled. `tools/convert` is not shipped; the finished
 centrelines live in `public/shared/circuits.js`.
+
+## Renaming drivers and teams
+
+Everything is in `public/shared/drivers.js`. `TEAMS` holds ten teams (`color` is
+the car body and the UI accent, `trim` is the wings, stripes and wheel rims).
+`ROSTER` holds twenty drivers as `[team, number, name, accel, top, grip, helmet]`.
+The three figures are multipliers around 1.0, so 1.05 top with 0.95 accel is a
+car that is fast down the straight and slow off the line; stay inside roughly
+0.94 to 1.06 or the grid stops being competitive.
+
+Change a name and the lobby, HUD, timing screen and AI all follow: driver ids
+are derived from the name, and nothing else hardcodes a driver.
+
+The roster ships invented. Real team names, driver names and liveries are
+trademarks and likeness rights that a published game licences, so swapping them
+in is a decision for whoever ships it, not a default.
 
 ## How it fits together
 
 ```
 server.js               rooms, lobby, the 60 Hz race loop, 30 Hz snapshots
 public/shared/sim.js    physics and the bot driver, imported by BOTH sides
-public/shared/tracks.js circuit geometry, drivers, centreline projection
+public/shared/tracks.js circuit geometry and centreline projection
+public/shared/drivers.js the grid: teams, drivers, liveries
 public/shared/circuits.js real circuit centrelines
 public/js/main.js       networking, prediction, HUD
 public/js/scene.js      three.js world and the blocky car model
@@ -117,8 +138,8 @@ node tools/validate-tracks.js  # self-intersections, corner radii, spacing
 
 Clean laps should show close to 0% off track and one wall contact (the start).
 If off-track climbs, the cars are washing wide and the grip numbers moved too
-far. Reference lap times for the bots at full pace: Sakhir ~105 s, Northants
-~111 s, Ardennes ~132 s.
+far. Reference lap times for the bots at full pace: Sakhir ~105 s,
+Silverstone ~111 s, Spa ~132 s.
 
 `window.__apex.state` in the browser console reports the predicted car, the
 camera, and the current prediction error in metres.

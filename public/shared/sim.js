@@ -15,7 +15,8 @@ export const TUNE = {
   steerRamp: 12,
   maxLat: 43,          // m/s^2 of cornering grip
   wallMargin: 5.5,
-  wallKeep: 0.55
+  wallKeep: 0.55,
+  carHalf: 1.15        // the barrier stops the bodywork, not the car's centre
 };
 
 export function driverOf(id) { return DRIVERS.find(d => d.id === id) || DRIVERS[0]; }
@@ -117,7 +118,7 @@ export function stepCar(built, car, input, drv, dt, raceTime, onLap) {
   car.lateral = pr.lateral;
   car.off = Math.abs(pr.lateral) > half;
 
-  const wall = half + (built.runoff || TUNE.wallMargin);
+  const wall = half + (built.runoff || TUNE.wallMargin) - TUNE.carHalf;
   if (Math.abs(pr.lateral) > wall) {
     const s = pr.point, sign = Math.sign(pr.lateral);
     car.x = s.x + s.nx * wall * sign;

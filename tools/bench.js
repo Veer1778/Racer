@@ -7,7 +7,7 @@ const LAPS = 3;
 
 for (const t of TRACKS) {
   const built = trackFor(t.id);
-  const drivers = ['kaito', 'mira', 'vance', 'rook'];
+  const drivers = ['kaito-renn', 'mira-okonkwo', 'elias-vance', 'dmitri-rook'];
   const cars = drivers.map((_, i) => gridCar(built, i));
   let time = 0, offTicks = 0, ticks = 0, hits = 0, lastHit = -9;
   const done = [];
