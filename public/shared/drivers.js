@@ -18,29 +18,32 @@ export const TEAMS = [
   { id: 'aurelian',   name: 'Aurelian',   color: '#1b4fa8', trim: '#e8d5a3', base: 'Banbury, UK' }
 ];
 
-// accel / top / grip are multipliers around 1.0, so a car is quick somewhere
-// and compromised somewhere else rather than simply better.
+// Every car is identical. The three figures below are all 1.00 on purpose:
+// nobody should finish ahead because of which driver they picked off the lobby
+// screen. What differs between cars during a race is tyre compound, tyre wear,
+// damage and who drove better. The columns stay so a private build can make a
+// car quicker without touching anything else.
 const ROSTER = [
   ['vantari',    7, 'Kaito Renn',      1.00, 1.00, 1.00, '#ffd166'],
-  ['vantari',   16, 'Luca Moreau',     1.02, 0.99, 1.00, '#e2334a'],
-  ['solaxis',    4, 'Noor Bashir',     1.05, 0.96, 1.02, '#f5a524'],
-  ['solaxis',   23, 'Dries Vandaal',   1.03, 0.97, 1.01, '#1b2230'],
-  ['ardent',    11, 'Elias Vance',     0.95, 1.05, 0.98, '#e9edf5'],
-  ['ardent',    31, 'Sam Okafor',      0.97, 1.04, 0.99, '#2f6fe4'],
-  ['kestrel',    5, 'Mira Okonkwo',    1.02, 0.99, 1.03, '#1fc36b'],
-  ['kestrel',   18, 'Jonas Ek',        1.00, 1.01, 1.02, '#0d1018'],
-  ['nordvik',    9, 'Dmitri Rook',     0.98, 1.03, 0.97, '#9a5cff'],
-  ['nordvik',   27, 'Ines Halvard',    1.01, 1.00, 0.99, '#e9edf5'],
-  ['verano',    14, 'Tomas Silva',     1.03, 0.97, 1.01, '#00c4c4'],
-  ['verano',    22, 'Rafa Duarte',     1.04, 0.96, 1.00, '#0d1018'],
-  ['meridian',   3, 'Anaya Deshmukh',  1.01, 1.01, 1.00, '#ff5f8d'],
-  ['meridian',  40, 'Yuki Tanabe',     1.02, 1.00, 1.01, '#e9edf5'],
-  ['copperline', 77, 'Brett Hale',     0.97, 1.04, 0.99, '#c9d1d9'],
-  ['copperline', 12, 'Otto Frey',      0.99, 1.02, 0.98, '#b87333'],
-  ['kaizen',     8, 'Sora Iwata',      1.04, 0.97, 1.02, '#ff6a2b'],
-  ['kaizen',    29, 'Milo Brandt',     1.02, 0.98, 1.00, '#14181f'],
-  ['aurelian',  44, 'Viktor Aalto',    0.99, 1.03, 1.01, '#e8d5a3'],
-  ['aurelian',   6, 'Priya Raman',     1.01, 1.01, 0.99, '#1b4fa8']
+  ['vantari',   16, 'Luca Moreau',     1.00, 1.00, 1.00, '#e2334a'],
+  ['solaxis',    4, 'Noor Bashir',     1.00, 1.00, 1.00, '#f5a524'],
+  ['solaxis',   23, 'Dries Vandaal',   1.00, 1.00, 1.00, '#1b2230'],
+  ['ardent',    11, 'Elias Vance',     1.00, 1.00, 1.00, '#e9edf5'],
+  ['ardent',    31, 'Sam Okafor',      1.00, 1.00, 1.00, '#2f6fe4'],
+  ['kestrel',    5, 'Mira Okonkwo',    1.00, 1.00, 1.00, '#1fc36b'],
+  ['kestrel',   18, 'Jonas Ek',        1.00, 1.00, 1.00, '#0d1018'],
+  ['nordvik',    9, 'Dmitri Rook',     1.00, 1.00, 1.00, '#9a5cff'],
+  ['nordvik',   27, 'Ines Halvard',    1.00, 1.00, 1.00, '#e9edf5'],
+  ['verano',    14, 'Tomas Silva',     1.00, 1.00, 1.00, '#00c4c4'],
+  ['verano',    22, 'Rafa Duarte',     1.00, 1.00, 1.00, '#0d1018'],
+  ['meridian',   3, 'Anaya Deshmukh',  1.00, 1.00, 1.00, '#ff5f8d'],
+  ['meridian',  40, 'Yuki Tanabe',     1.00, 1.00, 1.00, '#e9edf5'],
+  ['copperline', 77, 'Brett Hale',     1.00, 1.00, 1.00, '#c9d1d9'],
+  ['copperline', 12, 'Otto Frey',      1.00, 1.00, 1.00, '#b87333'],
+  ['kaizen',     8, 'Sora Iwata',      1.00, 1.00, 1.00, '#ff6a2b'],
+  ['kaizen',    29, 'Milo Brandt',     1.00, 1.00, 1.00, '#14181f'],
+  ['aurelian',  44, 'Viktor Aalto',    1.00, 1.00, 1.00, '#e8d5a3'],
+  ['aurelian',   6, 'Priya Raman',     1.00, 1.00, 1.00, '#1b4fa8']
 ];
 
 export const DRIVERS = ROSTER.map(([teamId, no, name, accel, top, grip, helmet]) => {

@@ -32,7 +32,7 @@ for (const t of TRACKS) {
       if (c.touching && !wasTouching[i]) hits++;
       wasTouching[i] = c.touching;
     });
-    separate(cars, DT);
+    separate(cars, DT, null, built.length);
   }
 
   const laps = cars.flatMap(c => c.lapTimes);

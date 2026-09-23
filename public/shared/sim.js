@@ -32,7 +32,20 @@ export const TUNE = {
   gridBack: 18,        // metres from the line to pole
   gridStep: 9.5,       // metres between one slot and the next
   gridStagger: 2.7,    // metres either side of the centreline
-  reverseTop: 11       // m/s, about 40 km/h backwards
+  reverseTop: 9,       // m/s, about 32 km/h backwards
+
+  // Stewarding. A time penalty is served at the next pit stop — the car waits
+  // before the crew may touch it — and whatever is left over is added to the
+  // race time at the end, which is how Formula 1 does it.
+  limitsAllowed: 2,    // track-limit warnings before the first penalty
+  penaltyLimits: 5,    // seconds, for the third excursion and every third after
+  penaltyCollision: 5, // seconds, for causing a collision
+  penaltyJump: 5,      // seconds, for moving before the lights go out
+  penaltyRelease: 5    // seconds, for an unsafe release from the pit box
+  // Note: there is deliberately no automatic disqualification for collecting
+  // penalties. Formula 1 does not have one — a black flag is for ignoring a
+  // penalty or for dangerous driving, not for a tally — and an automatic one
+  // ended races here the moment a driver had a scrappy afternoon.
 };
 
 export const COMPOUNDS = [
@@ -148,6 +161,9 @@ export function gridCar(built, i, tyre = 'medium') {
     tyre, wear: 0, damage: 0, stops: 0,
     pit: 'no',                 // no | armed | lane | stopped
     pitClock: 0, pitTyre: 'medium', box: i, served: false, pitCool: 0, jack: 0, hitCool: 0,
+    revHold: 0,
+    // stewarding
+    penaltySec: 0, penalties: 0, limitStrikes: 0, offFor: 0, offPeak: 0,
     sector: 0, sectorStart: 0, sectors: [], bestSectors: []
   };
 }
@@ -364,17 +380,26 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
         && (atBox || car.pitWait > 1.5)) {
       car.pit = 'stopped';
       car.pitWait = 0;
-      car.pitClock = TUNE.pitService;
-      fire('pit', { state: 'stopped' });
+      // Any time penalty is served here first: the car sits and nobody touches
+      // it. Whatever is left unserved is added to the race time at the end.
+      const serve = Math.max(0, car.penaltySec || 0);
+      car.penaltyServing = serve;
+      car.penaltySec = 0;
+      car.pitClock = TUNE.pitService + serve;
+      fire('pit', { state: 'stopped', penalty: serve });
     }
   } else car.pitWait = 0;
   if (car.pit === 'stopped') {
     car.v *= Math.max(0, 1 - 8 * dt);
     if (Math.abs(car.v) < 0.5) car.v = 0;
     car.pitClock -= dt;
-    // the jack lifts the car for the middle of the stop; the renderer reads it
-    const phase = 1 - Math.max(0, car.pitClock) / TUNE.pitService;
-    car.jack = Math.max(0, Math.min(1, Math.min(phase / 0.22, (1 - phase) / 0.18)));
+    // A penalty is served before the work starts: the car sits, nobody touches
+    // it, and only when that time is up do the crew come over. So the jack and
+    // the crew animation run off the working part of the clock, not the whole
+    // stop, or they would play out during the wait.
+    const working = car.pitClock <= TUNE.pitService;
+    const phase = working ? 1 - Math.max(0, car.pitClock) / TUNE.pitService : 0;
+    car.jack = working ? Math.max(0, Math.min(1, Math.min(phase / 0.22, (1 - phase) / 0.18))) : 0;
     if (car.pitClock <= 0) {
       car.tyre = car.pitTyre || 'medium';
       car.wear = 0;
@@ -407,22 +432,29 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
   }
   const power = TUNE.power * drv.accel * (car.off ? 0.75 : 1);
 
-  // Reverse gear. Held, the throttle drives the car backwards at walking pace;
-  // if it is still rolling forwards it brakes to a stop first, so selecting
-  // reverse at speed slows the car rather than throwing it into a spin.
-  if (input.r && !car.finished && car.pit !== 'stopped') {
-    if (car.v > 0.6) { gas = 0; brake = Math.max(brake, 0.65); }
-    else {
-      car.v -= gas * power * 0.45 * Math.max(0, 1 - Math.abs(car.v) / TUNE.reverseTop) * dt;
-      gas = 0;
+  // Reverse is the brake held on. Come to a stop, keep holding, and the car
+  // backs up — which is the one control every arcade racer already teaches, and
+  // it needs no gear switch on a phone the player cannot look at. The hold
+  // timer is what stops a hard stop from snapping straight into reverse.
+  let reversing = false;
+  if (brake > 0.45 && gas === 0 && !car.finished && car.pit !== 'stopped') {
+    car.revHold = (car.revHold || 0) + dt;
+    if (car.v < 0.8 && car.revHold > 0.35) {
+      car.v -= power * 0.40 * Math.max(0, 1 - Math.abs(car.v) / TUNE.reverseTop) * dt;
+      brake = 0;
+      reversing = true;
     }
-  }
+  } else car.revHold = 0;
 
   car.v += gas * power * Math.max(0, 1 - Math.abs(car.v) / top) * dt;
   car.v -= brake * TUNE.brake * dt * Math.sign(car.v || 1);
   car.v -= (car.off ? TUNE.offDrag : TUNE.drag) * car.v * dt;
   if (gas === 0 && brake > 0 && car.v < 0) car.v = Math.max(car.v, -13);
-  if (gas === 0 && brake === 0 && Math.abs(car.v) < 0.35) car.v = 0;
+  // The neutral clamp stops a car creeping at a standstill, and it must not
+  // apply while the driver is deliberately backing up: one tick of reverse is
+  // 0.3 m/s, so the clamp was erasing it as fast as it was applied and the car
+  // sat at exactly zero however long the brake was held.
+  if (gas === 0 && brake === 0 && !reversing && Math.abs(car.v) < 0.35) car.v = 0;
 
   /* ---- steering, limited by grip --------------------------------------- */
   const v = Math.abs(car.v);
@@ -520,6 +552,26 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
     car.touching = false;          // clear of the barrier, next hit counts again
   }
 
+  /* ---- track limits ----------------------------------------------------- */
+  // All four wheels off, under power, and back on again: that is an excursion.
+  // It is judged on the way back rather than while the car is out there, so one
+  // trip across the kerbs is one strike however long it lasts. A car that was
+  // hit in the last second and a half was put there by someone else and is not
+  // charged for it, which is the judgement a steward actually makes.
+  const wheelsOff = Math.abs(pr.lateral) > half + TUNE.carHalf && !inLane;
+  if (wheelsOff) {
+    car.offFor = (car.offFor || 0) + dt;
+    car.offPeak = Math.max(car.offPeak || 0, Math.abs(pr.lateral));
+  } else if (car.offFor > 0) {
+    const pushed = raceTime - (car.hit || -99) < 1.5;
+    if (car.offFor > 0.3 && v > 14 && !pushed && !car.finished && !car.retired) {
+      car.limitStrikes++;
+      fire('limits', { strikes: car.limitStrikes, peak: car.offPeak });
+    }
+    car.offFor = 0;
+    car.offPeak = 0;
+  }
+
   /* ---- lap and sector timing ------------------------------------------- */
   const L = built.length;
   const dist = pr.dist < 0 ? pr.dist + L : pr.dist % L;
@@ -564,11 +616,20 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
 // The old version only had the first. Every impact was divided by dt and
 // spread over the hundreds of ticks a contact lasts, so a 200 km/h rear-ender
 // and a gentle nudge produced the same imperceptible nothing.
-export function separate(cars, dt = 1 / 60, events) {
+export function separate(cars, dt = 1 / 60, events, lapLength = 0) {
   for (let i = 0; i < cars.length; i++) {
     for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j];
       if (!a || !b || a.retired || b.retired) continue;
+      // Two cars can be three metres apart in plan and on completely different
+      // parts of the lap: Suzuka crosses over itself, and several circuits run
+      // back alongside their own pit straight. Real circuits use a bridge or a
+      // wall; with no elevation here, the check is how far apart they are along
+      // the lap. Lap number is deliberately ignored, so lapping still works.
+      if (lapLength) {
+        const gap = Math.abs((a.prevDist || 0) - (b.prevDist || 0));
+        if (Math.min(gap, lapLength - gap) > 120) continue;
+      }
       const dx = b.x - a.x, dz = b.z - a.z;
       const d2 = dx * dx + dz * dz, min = 4.4;
       if (d2 >= min * min || d2 < 1e-6) continue;
@@ -619,7 +680,7 @@ export function separate(cars, dt = 1 / 60, events) {
       b.yaw = (b.yaw || 0) - sideB * k * 2.0 - (1 - square) * sideB * k * 1.2;
       a.damage = Math.min(1, (a.damage || 0) + sev / 62);
       b.damage = Math.min(1, (b.damage || 0) + sev / 125);
-      if (events) events(a, b, sev);
+      if (events) events(a, b, sev, square);
     }
   }
 }

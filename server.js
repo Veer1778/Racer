@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TRACKS, DRIVERS, TEAMS, getTrack } from './public/shared/tracks.js';
-import { trackFor, gridCar, aiInput, stepCar, separate, driverOf, COMPOUNDS } from './public/shared/sim.js';
+import { trackFor, gridCar, aiInput, stepCar, separate, driverOf, COMPOUNDS, TUNE } from './public/shared/sim.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -146,10 +146,24 @@ function retire(room, p, reason) {
   if (!room.results.some(r => r.pid === p.pid)) {
     room.results.push({ pid: p.pid, name: p.name, bot: p.bot, driverId: p.driverId,
                         time: null, best: p.car.best, laps: Math.max(0, p.car.lap),
-                        progress: p.car.progress, retired: true, reason });
+                        progress: p.car.progress, retired: true, reason,
+                        penalty: Math.max(0, p.car.penaltySec || 0) });
   }
   broadcast(room, { t: 'retired', pid: p.pid, name: p.name, reason });
   if (!p.bot) send(p.ws, { t: 'results', results: room.results, trackId: room.trackId });
+}
+
+// ---------------------------------------------------------- stewarding
+//
+// A time penalty is served at the next pit stop, and anything still unserved
+// when the car finishes is added to its race time. That is how Formula 1 does
+// it, and it means a penalty is a real cost whether or not you stop again.
+function penalise(room, p, seconds, reason) {
+  if (!p.car || p.car.retired) return;
+  p.car.penaltySec = (p.car.penaltySec || 0) + seconds;
+  p.car.penalties = (p.car.penalties || 0) + 1;
+  broadcast(room, { t: 'penalty', pid: p.pid, name: p.name, seconds, reason,
+                    total: p.car.penaltySec, count: p.car.penalties });
 }
 
 function tickCar(room, p, dt) {
@@ -179,13 +193,29 @@ function tickCar(room, p, dt) {
       send(p.ws, { t: 'pitstate', state: data.state, tyre: data.tyre || p.car.tyre });
     }
     if (kind === 'dnf') { retire(room, p, 'damage'); return; }
+
+    // Track limits: two warnings, then five seconds for the third and for
+    // every third after that — the same ladder the stewards use.
+    if (kind === 'limits') {
+      const n = data.strikes;
+      if (n > TUNE.limitsAllowed && (n - TUNE.limitsAllowed) % 1 === 0 && n % 3 === 0) {
+        penalise(room, p, TUNE.penaltyLimits, 'track limits');
+      } else if (!p.bot) {
+        send(p.ws, { t: 'warning', kind: 'limits', strikes: n,
+                     left: Math.max(0, 3 - (n % 3)) });
+      }
+    }
     if (kind !== 'lap') return;
     const lap = data.lap;
     if (lap > room.laps && !p.car.finished) {
       p.car.finished = true;
       p.car.finishT = room.raceTime;
+      // Anything still unserved is added here, which is what makes a penalty
+      // taken on the last lap cost exactly as much as one taken on the first.
+      const pen = Math.max(0, p.car.penaltySec || 0);
       room.results.push({ pid: p.pid, name: p.name, bot: p.bot, driverId: p.driverId,
-                          time: room.raceTime, best: p.car.best, laps: lap - 1 });
+                          time: room.raceTime + pen, raw: room.raceTime, penalty: pen,
+                          best: p.car.best, laps: lap - 1 });
       broadcast(room, { t: 'finished', pid: p.pid, name: p.name, pos: room.results.length, time: room.raceTime });
     }
   });
@@ -218,7 +248,8 @@ function snapshot(room) {
       ty: p.car.tyre, w: +p.car.wear.toFixed(3), dmg: +p.car.damage.toFixed(3), st: p.car.stops || 0,
       pit: p.car.pit, ret: p.car.retired, yaw: +(p.car.yaw || 0).toFixed(3),
       jk: +(p.car.jack || 0).toFixed(2), pcl: +Math.max(0, p.car.pitClock || 0).toFixed(2),
-      sv: !!p.car.served,
+      sv: !!p.car.served, pen: +(p.car.penaltySec || 0).toFixed(1),
+      lim: p.car.limitStrikes || 0,
       hint: p.car.hint, pd: +p.car.prevDist.toFixed(2), pr: +p.car.progress.toFixed(1),
       in: p.bot ? undefined : { s: +(p.input.s || 0).toFixed(2), g: p.input.g || 0, b: p.input.b || 0 },
       cur: +Math.max(0, room.raceTime - p.car.lapStart).toFixed(2)
@@ -244,20 +275,62 @@ setInterval(() => {
     for (const room of rooms.values()) {
       if (room.state === 'countdown') {
         const left = (room.startAt - Date.now()) / 1000;
-        if (left <= 0) { room.state = 'racing'; room.raceTime = 0; broadcast(room, { t: 'go' }); }
+        // The last second of the countdown is simulated, so a driver who gets
+        // on the throttle early actually creeps forward and can be caught for
+        // it. Bots are held at zero input; only a person can jump the start.
+        if (left < 1.0 && left > 0 && room.built) {
+          for (const p of room.players.values()) {
+            if (!p.car) continue;
+            const input = p.bot ? { s: 0, g: 0, b: 0 } : { ...p.input, pit: 0 };
+            stepCar(room.built, p.car, input, driverOf(p.driverId), TICK, 0, null);
+            if (!p.jumped && Math.abs(p.car.v) > 0.9) p.jumped = true;
+          }
+        }
+        if (left <= 0) {
+          room.state = 'racing'; room.raceTime = 0;
+          broadcast(room, { t: 'go' });
+          for (const p of room.players.values()) {
+            if (p.jumped) { penalise(room, p, TUNE.penaltyJump, 'jump start'); p.jumped = false; }
+          }
+        }
       } else if (room.state === 'racing') {
         room.raceTime += TICK;
         room.field = [...room.players.values()].map(p => p.car).filter(Boolean);
         for (const p of room.players.values()) if (p.car) tickCar(room, p, TICK);
         const field = [...room.players.values()].filter(p => p.car);
         const byCar = new Map(field.map(p => [p.car, p]));
-        separate(field.map(p => p.car), TICK, (ca, cb, sev) => {
+        separate(field.map(p => p.car), TICK, (ca, cb, sev, square) => {
           ca.hit = cb.hit = room.raceTime;
           for (const c of [ca, cb]) {
             const p = byCar.get(c);
             if (p && !p.bot) send(p.ws, { t: 'crash', closing: sev, damage: c.damage, car: true });
           }
-        });
+          // Causing a collision: the car that closed, squarely, at speed. A
+          // side-by-side rub is racing; driving into the back of someone is not.
+          const at = byCar.get(ca);
+          if (at && square > 0.55 && sev > 20 && room.raceTime > 1) {
+            penalise(room, at, TUNE.penaltyCollision, 'causing a collision');
+          }
+        }, room.built.length);
+
+        // Unsafe release: rejoining the lane from the box across another car.
+        for (const p of field) {
+          const c = p.car;
+          const releasing = c.served && c.pit === 'lane' && room.raceTime - (c.releasedAt || -99) < 1.2;
+          if (c.pit === 'lane' && c.served && !c.releasedAt) c.releasedAt = room.raceTime;
+          if (c.pit !== 'lane') c.releasedAt = 0;
+          if (!releasing || c.releaseJudged) continue;
+          for (const q of field) {
+            if (q === p || q.car.pit !== 'lane') continue;
+            const dx = q.car.x - c.x, dz = q.car.z - c.z;
+            const behind = -(dx * Math.sin(c.h) + dz * Math.cos(c.h));
+            if (behind > 0 && behind < 11 && Math.hypot(dx, dz) < 12) {
+              c.releaseJudged = true;
+              penalise(room, p, TUNE.penaltyRelease, 'unsafe release');
+              break;
+            }
+          }
+        }
         const humans = [...room.players.values()].filter(p => !p.bot);
         const allDone = humans.length > 0 && humans.every(p => p.car.finished || p.car.retired);
         const firstDone = room.results.length > 0;
@@ -274,6 +347,16 @@ setInterval(() => {
     if (now - room.lastBroadcast < 33) continue;
     room.lastBroadcast = now;
     if (room.built) broadcast(room, snapshot(room));
+
+    // A few times a second, each paired phone gets its own car's speed back.
+    // The controller needs it to tell the driver that holding the brake has
+    // put the car in reverse; it is far too little traffic to batch.
+    if (now - (room.lastTel || 0) > 180) {
+      room.lastTel = now;
+      for (const p of room.players.values()) {
+        if (p.ctrl && p.car) send(p.ctrl, { t: 'tel', v: +p.car.v.toFixed(1) });
+      }
+    }
   }
 }, 8);
 
@@ -373,7 +456,7 @@ wss.on('connection', (ws) => {
       }
       case 'in': {
         if (!player) return;
-        player.input = { s: m.s || 0, g: m.g || 0, b: m.b || 0, r: m.r ? 1 : 0 };
+        player.input = { s: m.s || 0, g: m.g || 0, b: m.b || 0 };
         // A pit request is a one-shot event arriving on a stream of state
         // messages: latch it, or the next input frame overwrites it before the
         // physics tick ever sees it.
@@ -446,6 +529,13 @@ wss.on('connection', (ws) => {
       case 'devbot': {
         if (!process.env.APEX_DEV || !player) return;
         player.autopilot = !!m.on;
+        break;
+      }
+      // The phone asks the race screen to change camera. It goes to the game
+      // client because the view is that machine's business, not the server's.
+      case 'cam': {
+        if (!player || !player.ws) return;
+        send(player.ws, { t: 'cam' });
         break;
       }
       case 'recover': {

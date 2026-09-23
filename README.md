@@ -5,6 +5,8 @@ pairs a phone as a steering wheel by scanning a QR code. Five circuits, three of
 them the real layouts of well known venues, traced from open geographic data.
 
 The grid is twenty invented drivers across ten teams, renameable in one file.
+**Every car is identical** — nobody finishes ahead because of which driver they
+picked off the lobby screen.
 
 ## Run it
 
@@ -42,12 +44,17 @@ at whatever angle you're holding. "Touch steering" swaps tilt for a drag bar.
 "Rejoin" puts a beached car back on track.
 
 **No phone.** Arrow keys or WASD, space to brake, **R** to rejoin the track,
-**shift+R** for reverse gear, **P** for the pits, **C** to change camera.
+**P** for the pits, **C** to change camera. Holding the brake once stopped backs
+the car up.
 
-The controller has rocker switches for **reverse** — the throttle pedal turns
-amber and relabels itself, so there is no doubt which way the car is about to
-go — and for **invert**, if tilt steers the wrong way on your handset. It
-remembers both. Which axis
+**Reverse is the brake held on.** Come to a stop, keep holding, and the car
+backs up — the control every racing game already teaches, and it needs no gear
+switch on a phone you cannot look at. The phone reads the car's speed back a few
+times a second, so the brake pad relabels itself REVERSE when it happens.
+
+There is also a **Camera** button, because the game may be on a television and
+the phone is the only thing in reach, and a **Steering: normal / inverted**
+toggle if tilt reads the wrong way on your handset. It remembers the choice. Which axis
 reads as "roll the phone like a wheel" depends on which way the phone was turned
 into landscape, and not every handset reports that the same way.
 
@@ -105,27 +112,61 @@ the car standing in it come from the same function, so they cannot drift apart.
 
 ## Frame rate
 
-The renderer gives things up until it can hold a frame rate, and it does it on
-the race you are in rather than the next one. Three tiers — full, eased, reduced
-— trade the shadow pass, the environment lighting and the drawing resolution in
-that order, measured over a span of *time* rather than a count of frames so a
-slow machine is not the last to find out it is slow. A change says so on screen
-and recompiles the shaders in one deliberate pause instead of leaking the cost
-over the next forty frames.
+Graphics quality is a **setting**, picked in the lobby, and nothing changes
+during a race. Low turns off shadows and the environment lighting and drops the
+drawing resolution; Medium keeps both at half the shadow resolution; High is
+everything. The choice is remembered.
+
+An earlier version measured the frame rate and stepped the detail down mid-race
+with a message on screen. Being told your machine is struggling in the middle of
+a corner is worse than the frame rate was, so it now only guesses a starting
+point from what the machine reports about itself, errs low, and leaves it alone.
+
+On the software renderer used for testing, Low runs 2.7x faster than Medium, so
+the setting is a real lever rather than a cosmetic one.
+
+## Rules and penalties
+
+Stewarding is real and it costs time. A penalty is served at your next pit stop
+— the car sits in the box and nobody touches it until the time is up — and
+whatever is left unserved is added to your race time at the end. That is how
+Formula 1 does it, and it means a penalty taken on the last lap costs exactly as
+much as one taken on the first.
+
+| Offence | Penalty |
+|---|---|
+| Track limits, all four wheels off | two warnings, then 5s for the third and every third after |
+| Causing a collision | 5s |
+| Moving before the lights go out | 5s |
+| Unsafe release from the pit box | 5s |
+
+Track limits are judged on the way back, so one trip across the kerbs is one
+strike however long it lasts, and a car that was hit in the last second and a
+half was put there by someone else and is not charged for it. Causing a
+collision is judged on how *square* the contact was: running alongside someone
+and rubbing is racing, driving into the back of them is not.
+
+There is deliberately no automatic disqualification for collecting penalties.
+Formula 1 does not have one, and an automatic one ended races here the moment a
+driver had a scrappy afternoon.
+
+`tools/stewards.js` exercises all of it.
 
 ## Circuits
 
-| Circuit | Length | Notes |
-|---|---|---|
-| Sakhir | 5.3 km | Bahrain layout, run at night |
-| Silverstone | 5.8 km | fast and open |
-| Spa | 6.9 km | longest lap in the game |
-| Kestrel Ring | 1.8 km | invented, long straights |
-| Cobalt Bay | 1.3 km | invented street circuit |
+Twenty-three circuits from the current Formula 1 calendar, traced from the open
+OpenStreetMap-derived `f1-circuits` dataset, projected to metres and resampled
+by curvature — roughly a control point every 26 m down a straight and every 7 m
+through a hairpin. **Every lap comes out within 2% of the circuit's published
+length, and most within 1%.** `tools/validate-tracks.js` checks each one.
 
-Real layouts come from the open `f1-circuits` GeoJSON dataset, projected to
-metres, smoothed and resampled. `tools/convert` is not shipped; the finished
-centrelines live in `public/shared/circuits.js`.
+Names are geographic — the venue's town or city — so the game carries no
+circuit's commercial branding.
+
+Two things the game cannot represent, and does not pretend to: there is no
+elevation, so Suzuka's crossover is a flat junction rather than a bridge and Eau
+Rouge is flat; and each circuit's real track width varies corner to corner,
+while here it is one figure per circuit.
 
 ## Renaming drivers and teams
 

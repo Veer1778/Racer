@@ -134,7 +134,10 @@
     border-radius:7px;backdrop-filter:blur(7px)}
 
   /* ---- timing tower, far left, full height ---- */
-  #towerwrap{position:absolute;left:10px;top:10px;bottom:10px;width:172px;
+  /* The tower is as tall as the field. A fixed full-height panel with eight
+     cars in it is mostly empty box, and it covers a third of the screen for
+     no reason. */
+  #towerwrap{position:absolute;left:10px;top:10px;width:172px;max-height:calc(100% - 20px);
     background:rgba(4,6,11,.90);border:1px solid rgba(255,255,255,.09);border-radius:8px;
     display:flex;flex-direction:column;overflow:hidden;backdrop-filter:blur(7px)}
   #towerhead{flex:none;text-align:center;font:800 11px/1 ui-sans-serif;letter-spacing:.30em;
@@ -145,7 +148,7 @@
   #towersub .k{font:700 9px/1 ui-sans-serif;letter-spacing:.20em;text-transform:uppercase;color:#7c88a0}
   #lapn{font:900 italic 14px/1 ui-monospace,monospace;color:#fff;margin-left:5px}
   #towersub .mode{font:800 9px/1 ui-sans-serif;letter-spacing:.22em;color:#9aa6bd}
-  #tower{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:3px 0}
+  #tower{display:flex;flex-direction:column;overflow:hidden;padding:3px 0}
   #tower .t{display:flex;align-items:center;height:19px;flex:none;padding:0 6px 0 0;
     border-bottom:1px solid rgba(255,255,255,.035)}
   #tower .t.me{background:rgba(226,51,74,.22)}
@@ -207,6 +210,16 @@
   .tcomp{width:17px;height:17px;border-radius:50%;display:grid;place-items:center;flex:none;
     font:900 9px/1 ui-sans-serif;color:#0b0e15;background:#ffc46b}
 
+  /* Stewarding: a standing note while a penalty is outstanding, and a flash
+     when one is handed out. It sits under the pit cue so the two never fight. */
+  #penalty{position:absolute;right:12px;top:262px;width:196px;display:none;
+    background:rgba(226,51,74,.92);color:#fff;border-radius:7px;padding:8px 11px}
+  #penalty.on{display:block}
+  #penalty .h{font:800 8px/1 ui-sans-serif;letter-spacing:.20em;text-transform:uppercase;opacity:.85}
+  #penalty .v{font:900 italic 19px/1.2 ui-monospace,monospace}
+  #penalty .r{font:700 9px/1.3 ui-sans-serif;letter-spacing:.10em;text-transform:uppercase;opacity:.85}
+  #penalty.warn{background:rgba(255,196,107,.94);color:#1a1205}
+
   #pitcue{position:absolute;left:50%;top:12%;transform:translateX(-50%);display:none;
     background:rgba(226,51,74,.94);color:#fff;font:800 11px/1 ui-sans-serif;letter-spacing:.18em;
     text-transform:uppercase;padding:9px 18px;border-radius:5px}
@@ -224,7 +237,7 @@
   #ctrlhint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);font:700 9px/1 ui-sans-serif;
     letter-spacing:.16em;text-transform:uppercase;color:var(--dim);background:rgba(8,11,17,.82);
     border:1px solid rgba(255,255,255,.08);border-radius:5px;padding:7px 15px}
-  #retire{position:absolute;right:12px;top:308px;pointer-events:auto;padding:8px 14px;font-size:10px;
+  #retire{position:absolute;right:12px;top:352px;pointer-events:auto;padding:8px 14px;font-size:10px;
     border-radius:6px}
   #retire.armed{background:var(--accent);color:#fff}
 
@@ -237,6 +250,7 @@
   .rtable .sw{display:inline-block;width:4px;height:15px;margin-right:9px;vertical-align:-3px}
   .rtable .t{font:700 13px/1 ui-monospace,monospace}
   .rtable .team{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .rtable .pen{font-size:10px;font-weight:800;color:#ff8a93;letter-spacing:.06em}
 </style>
 </head>
 <body>
@@ -303,6 +317,10 @@
       <button class="sq" data-skill="0.86">Relaxed</button>
       <button class="sq" data-skill="0.94">Standard</button>
       <button class="sq" data-skill="1">Pro</button></div>
+    <div class="setting"><span class="label">Graphics</span>
+      <button class="sq" data-q="low">Low</button>
+      <button class="sq" data-q="medium">Medium</button>
+      <button class="sq" data-q="high">High</button></div>
 
     <div class="pairwrap">
       <div class="qr" id="qr"></div>
@@ -378,6 +396,12 @@
   </div>
 
   <div id="pitcue"></div>
+
+  <div class="panel" id="penalty">
+    <div class="h">Penalty</div>
+    <div class="v" id="penv">+5.0s</div>
+    <div class="r" id="penr">track limits</div>
+  </div>
 
   <div id="lights">
     <div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div>

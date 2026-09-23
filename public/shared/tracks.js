@@ -1,96 +1,172 @@
 // Shared between server and browser. Pure ESM, no runtime dependencies.
-import { SAKHIR, SILVERSTONE, SPA_ } from './circuits.js';
+import { SAKHIR, JEDDAH, MELBOURNE, SUZUKA, SHANGHAI, MIAMI, IMOLA, MONACO, BARCELONA, MONTREAL, SPIELBERG, SILVERSTONE, BUDAPEST, SPA, ZANDVOORT, MONZA, BAKU, SINGAPORE, AUSTIN, MEXICO, SAOPAULO, LUSAIL, YASMARINA } from './circuits.js';
 import { DRIVERS } from './drivers.js';
 
 export { DRIVERS, TEAMS, driverById } from './drivers.js';
 
-// Fictional layouts are authored in polar form (radius at a given angle), which
-// can never produce a loop that crosses itself.
-function polar(list, squash = 1) {
-  return list.map(([a, r]) => {
-    const t = a * Math.PI / 180;
-    return [+(Math.cos(t) * r).toFixed(1), +(Math.sin(t) * r * squash).toFixed(1)];
-  });
-}
-
 export const TRACKS = [
   {
-    id: 'sakhir',
-    name: 'Sakhir',
-    country: 'Bahrain',
-    blurb: 'Desert night race. Huge braking zone into turn one, three genuine overtaking spots.',
-    real: true, width: 17, laps: 3, runoff: 15,
-    theme: { sky: '#0e1430', sky2: '#3a2a44', ground: '#c8a06a', ground2: '#b38f5e', asphalt: '#3a3f46', kerb: '#d8443a',
-              runoff: '#8a6a42', desert: true, rock: '#9c7b4e', rock2: '#87683f', fence: '#2f3545', night: true },
+    id: 'sakhir', name: 'Sakhir', country: 'Bahrain',
+    blurb: 'Desert night race. Huge braking zone into turn one, three real overtaking spots.',
+    real: true, width: 17, runoff: 16, laps: 3,
+    theme: { sky: '#0e1430', sky2: '#3a2a44', ground: '#c8a06a', ground2: '#b38f5e', asphalt: '#3a3f46', kerb: '#d8443a', runoff: '#8a6a42', desert: true, rock: '#9c7b4e', rock2: '#87683f', fence: '#2f3545', night: true },
     points: SAKHIR
   },
   {
-    id: 'silverstone',
-    name: 'Silverstone',
-    country: 'Great Britain',
+    id: 'jeddah', name: 'Jeddah', country: 'Saudi Arabia',
+    blurb: 'Fastest street circuit there is. Walls the whole way, barely a corner below 200.',
+    real: true, width: 15, runoff: 7, laps: 3,
+    theme: { sky: '#0b1224', sky2: '#2a3b57', ground: '#39424f', ground2: '#2f3743', asphalt: '#3a3f47', kerb: '#d8443a', runoff: '#555c68', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
+    points: JEDDAH
+  },
+  {
+    id: 'melbourne', name: 'Melbourne', country: 'Australia',
+    blurb: 'Parkland circuit round a lake. Fast, flowing and unforgiving on the exits.',
+    real: true, width: 16, runoff: 11, laps: 3,
+    theme: { sky: '#74b6e0', sky2: '#dceffa', ground: '#4f9350', ground2: '#438044', asphalt: '#43484e', kerb: '#d8443a', runoff: '#6d737d', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
+    points: MELBOURNE
+  },
+  {
+    id: 'suzuka', name: 'Suzuka', country: 'Japan',
+    blurb: 'The figure of eight. Esses in the first sector that reward commitment and nothing else.',
+    real: true, width: 15, runoff: 12, laps: 3,
+    theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a', runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#394051' },
+    points: SUZUKA
+  },
+  {
+    id: 'shanghai', name: 'Shanghai', country: 'China',
+    blurb: 'The long double-apex opener, then a back straight that goes on forever.',
+    real: true, width: 17, runoff: 16, laps: 3,
+    theme: { sky: '#8fa8bd', sky2: '#d6e2ea', ground: '#7d8a6a', ground2: '#6b7a5c', asphalt: '#41464c', kerb: '#d8443a', runoff: '#74797f', tree: '#3a6b42', tree2: '#4a8452', fence: '#39414f' },
+    points: SHANGHAI
+  },
+  {
+    id: 'miami', name: 'Miami', country: 'United States',
+    blurb: 'Stadium infield wrapped in long flat-out runs. Hot, bumpy and technical.',
+    real: true, width: 16, runoff: 10, laps: 3,
+    theme: { sky: '#74b6e0', sky2: '#dceffa', ground: '#4f9350', ground2: '#438044', asphalt: '#43484e', kerb: '#d8443a', runoff: '#6d737d', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
+    points: MIAMI
+  },
+  {
+    id: 'imola', name: 'Imola', country: 'Italy',
+    blurb: 'Old-school and narrow. Kerbs you take or you lose the lap.',
+    real: true, width: 14, runoff: 10, laps: 3,
+    theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a', runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#394051' },
+    points: IMOLA
+  },
+  {
+    id: 'monaco', name: 'Monaco', country: 'Monaco',
+    blurb: 'The barriers are the track limits. Qualifying is the race.',
+    real: true, width: 14, runoff: 5, laps: 4,
+    theme: { sky: '#101a2e', sky2: '#32455f', ground: '#2f3847', ground2: '#28303d', asphalt: '#383d44', kerb: '#e8e8e8', runoff: '#4a515e', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
+    points: MONACO
+  },
+  {
+    id: 'barcelona', name: 'Barcelona', country: 'Spain',
+    blurb: 'The reference lap. Long rights that punish anything less than a perfect balance.',
+    real: true, width: 16, runoff: 14, laps: 3,
+    theme: { sky: '#8fa8bd', sky2: '#d6e2ea', ground: '#7d8a6a', ground2: '#6b7a5c', asphalt: '#41464c', kerb: '#d8443a', runoff: '#74797f', tree: '#3a6b42', tree2: '#4a8452', fence: '#39414f' },
+    points: BARCELONA
+  },
+  {
+    id: 'montreal', name: 'Montreal', country: 'Canada',
+    blurb: 'Stop-start island circuit. Brakes and traction, and a wall at the last chicane.',
+    real: true, width: 15, runoff: 6, laps: 3,
+    theme: { sky: '#74b6e0', sky2: '#dceffa', ground: '#4f9350', ground2: '#438044', asphalt: '#43484e', kerb: '#d8443a', runoff: '#6d737d', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
+    points: MONTREAL
+  },
+  {
+    id: 'spielberg', name: 'Spielberg', country: 'Austria',
+    blurb: 'Shortest lap of the year. Three big braking zones and not much else.',
+    real: true, width: 16, runoff: 13, laps: 4,
+    theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a', runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#394051' },
+    points: SPIELBERG
+  },
+  {
+    id: 'silverstone', name: 'Silverstone', country: 'Great Britain',
     blurb: 'Fast, open and flowing. The high-speed sweepers are the whole lap.',
-    real: true, width: 17, laps: 3, runoff: 15,
-    theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a',
-              runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#39405180' },
+    real: true, width: 17, runoff: 15, laps: 3,
+    theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a', runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#394051' },
     points: SILVERSTONE
   },
   {
-    id: 'spa',
-    name: 'Spa',
-    country: 'Belgium',
-    blurb: 'Forest classic. Steep uphill left-right, then the longest flat-out run in the game.',
-    real: true, width: 16, laps: 2, runoff: 13,
-    theme: { sky: '#6d8aa6', sky2: '#c3d2de', ground: '#41763c', ground2: '#356032', asphalt: '#40454b', kerb: '#d8443a',
-              runoff: '#6b7078', tree: '#27592c', tree2: '#35723a', fence: '#39414f' },
-    points: SPA_
+    id: 'budapest', name: 'Budapest', country: 'Hungary',
+    blurb: 'Twisty and tight. Track position matters more than anywhere but Monaco.',
+    real: true, width: 15, runoff: 11, laps: 3,
+    theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a', runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#394051' },
+    points: BUDAPEST
   },
   {
-    id: 'kestrel',
-    name: 'Kestrel Ring',
-    country: 'Invented',
-    blurb: 'Long straights and heavy braking. Slipstream country.',
-    width: 18, laps: 8, runoff: 7,
-    theme: { sky: '#6fb3dd', sky2: '#cfe7f5', ground: '#478a4d', ground2: '#3b7442', asphalt: '#42474e', kerb: '#d8443a',
-              runoff: '#70767f', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
-    points: polar([
-      [0, 330], [18, 332], [36, 322], [54, 292], [72, 234], [90, 196],
-      [108, 188], [126, 214], [144, 206], [162, 150], [180, 128], [198, 168],
-      [216, 214], [234, 206], [252, 154], [270, 140], [288, 186], [306, 252],
-      [324, 302], [342, 326]
-    ], 1.2)
+    id: 'spa', name: 'Spa', country: 'Belgium',
+    blurb: 'Forest classic. The uphill left-right, then the longest flat-out run of the year.',
+    real: true, width: 16, runoff: 13, laps: 2,
+    theme: { sky: '#6d8aa6', sky2: '#c3d2de', ground: '#41763c', ground2: '#356032', asphalt: '#40454b', kerb: '#d8443a', runoff: '#6b7078', tree: '#27592c', tree2: '#35723a', fence: '#39414f' },
+    points: SPA
   },
   {
-    id: 'cobalt',
-    name: 'Cobalt Bay',
-    country: 'Invented',
-    blurb: 'Street circuit under lights. Walls close, mistakes expensive.',
-    width: 16, laps: 8, runoff: 4,
-    theme: { sky: '#101a2e', sky2: '#32455f', ground: '#2f3847', ground2: '#28303d', asphalt: '#383d44', kerb: '#e8e8e8',
-              runoff: '#4a515e', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
-    // Authored as r(theta) so the loop can never cross itself, with the main
-    // straight generated as r = 250/cos(theta) — an exact straight line in
-    // polar form. Without a straight there was nowhere to put a pit lane, and
-    // hand-placed transition points onto it left 9 m hairpins at both ends.
-    points: [
-      [250, 101], [250, 121.9], [250, 144.3], [250, 168.6], [250, 195.3], [244.9, 220.5],
-      [229.9, 238], [205.9, 245.4], [175, 240.8], [139.7, 223.5], [103.9, 195.4], [72.1, 161.9],
-      [49.4, 135.6], [38.8, 135.2], [30.1, 141.6], [20.9, 148.9], [10.9, 156.5], [0, 163.8],
-      [-11.9, 170.1], [-24.5, 174.5], [-37.5, 176.5], [-50.3, 175.6], [-62.4, 171.4], [-73, 164.1],
-      [-81.7, 153.6], [-87.9, 140.7], [-91.6, 126.1], [-93.2, 111], [-93.3, 96.6], [-93.3, 84],
-      [-94.5, 73.8], [-98.2, 66.2], [-105, 60.6], [-115.2, 56.2], [-128.2, 51.8], [-142.7, 46.4],
-      [-157.4, 39.3], [-171, 30.2], [-182.2, 19.2], [-190.2, 6.6], [-194.3, -6.8], [-194.3, -20.4],
-      [-190.1, -33.5], [-182.2, -45.4], [-170.9, -55.5], [-157.2, -63.5], [-142.1, -69.3], [-126.7, -73.1],
-      [-112.3, -75.7], [-99.9, -78], [-90.1, -81.1], [-83.1, -86.1], [-78.5, -93.6], [-75.4, -103.7],
-      [-72.6, -116.2], [-69.2, -130.1], [-64.3, -144.5], [-57.6, -158.3], [-48.9, -170.5], [-38.3, -180.4],
-      [-26.4, -187.5], [-13.4, -191.4], [0, -192.1], [13.3, -189.8], [26, -184.8], [37.8, -177.8],
-      [48.6, -169.5], [60.4, -165.9], [82.7, -185.6], [112.6, -211.7], [145.8, -233.3], [178.6, -245.8],
-      [207.7, -247.5], [230.5, -238.7], [245, -220.6], [250, -195.3], [250, -168.6], [250, -144.3],
-      [250, -121.9], [250, -101], [250, -81.2], [250, -62.3], [250, -44.1], [250, -26.3],
-      [250, -8.7], [250, 8.7], [250, 26.3], [250, 44.1], [250, 62.3], [250, 81.2]
-    ]
+    id: 'zandvoort', name: 'Zandvoort', country: 'Netherlands',
+    blurb: 'Banked turns through the dunes. Narrow, old and relentless.',
+    real: true, width: 14, runoff: 7, laps: 4,
+    theme: { sky: '#7fb0cf', sky2: '#dbe9f2', ground: '#cbbb8f', ground2: '#b8a87d', asphalt: '#42474d', kerb: '#d8443a', runoff: '#8a7f5e', desert: true, rock: '#b7a67d', rock2: '#a3926a', fence: '#39414f' },
+    points: ZANDVOORT
+  },
+  {
+    id: 'monza', name: 'Monza', country: 'Italy',
+    blurb: 'The temple of speed. Four chicanes and the rest flat out.',
+    real: true, width: 16, runoff: 12, laps: 3,
+    theme: { sky: '#6d8aa6', sky2: '#c3d2de', ground: '#41763c', ground2: '#356032', asphalt: '#40454b', kerb: '#d8443a', runoff: '#6b7078', tree: '#27592c', tree2: '#35723a', fence: '#39414f' },
+    points: MONZA
+  },
+  {
+    id: 'baku', name: 'Baku', country: 'Azerbaijan',
+    blurb: 'Castle section tighter than Monaco, then two kilometres flat along the sea.',
+    real: true, width: 14, runoff: 4, laps: 3,
+    theme: { sky: '#101a2e', sky2: '#32455f', ground: '#2f3847', ground2: '#28303d', asphalt: '#383d44', kerb: '#e8e8e8', runoff: '#4a515e', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
+    points: BAKU
+  },
+  {
+    id: 'singapore', name: 'Singapore', country: 'Singapore',
+    blurb: 'Night race under the lights. Bumps, walls and no let-up.',
+    real: true, width: 13, runoff: 4, laps: 3,
+    theme: { sky: '#0b1224', sky2: '#2a3b57', ground: '#39424f', ground2: '#2f3743', asphalt: '#3a3f47', kerb: '#d8443a', runoff: '#555c68', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
+    points: SINGAPORE
+  },
+  {
+    id: 'austin', name: 'Austin', country: 'United States',
+    blurb: 'Blind uphill first corner, then a sector of Silverstone esses.',
+    real: true, width: 17, runoff: 15, laps: 3,
+    theme: { sky: '#8fa8bd', sky2: '#d6e2ea', ground: '#7d8a6a', ground2: '#6b7a5c', asphalt: '#41464c', kerb: '#d8443a', runoff: '#74797f', tree: '#3a6b42', tree2: '#4a8452', fence: '#39414f' },
+    points: AUSTIN
+  },
+  {
+    id: 'mexico', name: 'Mexico City', country: 'Mexico',
+    blurb: 'Thin air. Low downforce, long straight, a stadium section at the end.',
+    real: true, width: 16, runoff: 12, laps: 4,
+    theme: { sky: '#74b6e0', sky2: '#dceffa', ground: '#4f9350', ground2: '#438044', asphalt: '#43484e', kerb: '#d8443a', runoff: '#6d737d', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
+    points: MEXICO
+  },
+  {
+    id: 'saopaulo', name: 'Sao Paulo', country: 'Brazil',
+    blurb: 'Anticlockwise and uphill to the line. Short lap, big grip changes.',
+    real: true, width: 15, runoff: 10, laps: 4,
+    theme: { sky: '#8fa8bd', sky2: '#d6e2ea', ground: '#7d8a6a', ground2: '#6b7a5c', asphalt: '#41464c', kerb: '#d8443a', runoff: '#74797f', tree: '#3a6b42', tree2: '#4a8452', fence: '#39414f' },
+    points: SAOPAULO
+  },
+  {
+    id: 'lusail', name: 'Lusail', country: 'Qatar',
+    blurb: 'Medium-and-fast all the way round. Brutal on tyres.',
+    real: true, width: 17, runoff: 15, laps: 3,
+    theme: { sky: '#0e1430', sky2: '#3a2a44', ground: '#c8a06a', ground2: '#b38f5e', asphalt: '#3a3f46', kerb: '#d8443a', runoff: '#8a6a42', desert: true, rock: '#9c7b4e', rock2: '#87683f', fence: '#2f3545', night: true },
+    points: LUSAIL
+  },
+  {
+    id: 'yasmarina', name: 'Yas Marina', country: 'Abu Dhabi',
+    blurb: 'Sunset to floodlight. Long straights into slow corners.',
+    real: true, width: 16, runoff: 14, laps: 3,
+    theme: { sky: '#0b1224', sky2: '#2a3b57', ground: '#39424f', ground2: '#2f3743', asphalt: '#3a3f47', kerb: '#d8443a', runoff: '#555c68', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
+    points: YASMARINA
   }
 ];
-
 /* ------------------------------------------------------------- building */
 
 function catmull(p0, p1, p2, p3, t) {
@@ -174,29 +250,38 @@ export function buildTrack(track, spacing = SPACING) {
   // and runoff sized to the radius alone lands on the next piece of road. Only
   // samples far away along the lap count, or a sample's own neighbours would
   // always be the nearest thing to it.
-  // What counts as "another part of the lap" is a question of heading, not of
-  // arc length. The two legs of a hairpin can be 35 m apart along the road and
-  // 25 m apart across it, which no distance threshold separates from ordinary
-  // contiguous road. Pointing the other way does.
-  const heading = line.map(p => Math.atan2(p.tx, p.tz));
-  const stride = Math.max(1, Math.round(9 / step));
+  // Can a barrier stand here at all? The exact question is whether the barrier
+  // post would end up on a piece of road — its own, or another part of the lap
+  // that doubles back. Heuristics about arc length and heading got close and
+  // still left a post across the track at four circuits' hairpins, so this asks
+  // the question directly: put the post where it would go and see whether any
+  // centreline sample is within half a track width of it.
+  //
+  // A uniform grid keeps it O(N): a lap of Spa is 1100 samples and the naive
+  // form is a million distance checks every time a track is built, including
+  // twenty-three times over when the lobby draws its circuit maps.
+  const CELL = 34;
+  const bucket = new Map();
+  const key = (x, z) => (Math.floor(x / CELL) * 73856093 ^ Math.floor(z / CELL) * 19349663);
   for (let i = 0; i < count; i++) {
-    const a = line[i];
-    let near = Infinity;
-    for (let j = 0; j < count; j += stride) {
-      const d = ((j - i) % count + count) % count;
-      const arc = Math.min(d, count - d) * step;
-      if (arc < 22) continue;                    // immediate neighbours, always close
-      let dh = heading[j] - heading[i];
-      while (dh > Math.PI) dh -= Math.PI * 2;
-      while (dh < -Math.PI) dh += Math.PI * 2;
-      if (arc < 85 && Math.abs(dh) < 1.9) continue;   // still the same stretch of road
-      const dx = line[j].x - a.x, dz = line[j].z - a.z;
-      const s2 = dx * dx + dz * dz;
-      if (s2 < near) near = s2;
-    }
-    a.near = Math.sqrt(near);
+    const k = key(line[i].x, line[i].z);
+    let arr = bucket.get(k);
+    if (!arr) bucket.set(k, arr = []);
+    arr.push(i);
   }
+  const onRoad = (x, z, clear) => {
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL), c2 = clear * clear;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const arr = bucket.get(key((cx + a) * CELL, (cz + b) * CELL));
+      if (!arr) continue;
+      for (let n = 0; n < arr.length; n++) {
+        const p = line[arr[n]];
+        const dx = p.x - x, dz = p.z - z;
+        if (dx * dx + dz * dz < c2) return true;
+      }
+    }
+    return false;
+  };
 
   const win = Math.ceil(24 / step);
   const half = track.width / 2;
@@ -204,18 +289,25 @@ export function buildTrack(track, spacing = SPACING) {
     let r = line[i].radius;
     for (let k = -win; k <= win; k++) r = Math.min(r, line[((i + k) % count + count) % count].radius);
     line[i].rmin = r;
-    // Nothing may reach more than halfway to the next stretch of road, either
-    // side. Where even that leaves no room for a barrier, there is no barrier:
-    // clamping it to a floor instead is what put one across the track at
-    // Sakhir's hairpin as soon as the circuit was widened.
-    line[i].wallCap = Math.max(half + 1.2, line[i].near / 2 - 1.2);
-    line[i].noWall = line[i].near / 2 - 1.2 < half + 2.5;
+    line[i].wallCap = 1e4;
     // How far a feature may sit on the inside of this bend. Below the floor
     // there is simply no room for one — the two sides of a hairpin are closer
     // together than the track is wide — and it must be left out rather than
     // squeezed onto the racing line.
     line[i].innerCap = Math.max(half + 3, r * 0.62);
     line[i].noInner = r * 0.62 < half + 3;
+  }
+
+  // Now the offsets are known, test where each barrier would actually stand.
+  const barrier = half + (track.runoff || 6);
+  for (let i = 0; i < count; i++) {
+    const p = line[i];
+    let blocked = false;
+    for (const sgn of [1, -1]) {
+      const o = sgn * maxOffset(p, sgn * barrier);
+      if (onRoad(p.x + p.nx * o, p.z + p.nz * o, half + 0.6)) blocked = true;
+    }
+    p.noWall = blocked;
   }
 
   return {

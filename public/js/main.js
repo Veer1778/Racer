@@ -97,6 +97,20 @@ function handle(m) {
       setTimeout(() => { $('#lobbyerr').textContent = ''; }, 6000);
       break;
     }
+    case 'cam': cycleView(); break;
+    case 'penalty':
+      if (m.pid === me.pid) {
+        flash(`${m.seconds}s penalty — ${m.reason}`);
+        penaltyReason = m.reason;
+        shake = Math.max(shake, 0.25);
+      } else flash(`${m.name}: ${m.seconds}s — ${m.reason}`);
+      break;
+    case 'warning':
+      if (m.kind === 'limits') {
+        flash(`Track limits — ${m.left} more and it is a penalty`);
+        penaltyReason = 'track limits';
+      }
+      break;
     case 'recovered': my.history = []; smooth.x = smooth.z = smooth.h = 0; flash('Rejoined the track'); break;
     case 'results': showResults(m); break;
   }
@@ -217,6 +231,8 @@ document.querySelectorAll('[data-laps]').forEach(b => b.onclick = () => me.host 
 document.querySelectorAll('[data-ai]').forEach(b => b.onclick = () => me.host && send({ t: 'config', aiCount: lobby.aiCount + (+b.dataset.ai) }));
 document.querySelectorAll('[data-skill]').forEach(b => b.onclick = () => me.host && send({ t: 'config', aiSkill: +b.dataset.skill }));
 document.querySelectorAll('[data-tyre]').forEach(b => b.onclick = () => send({ t: 'tyre', id: b.dataset.tyre }));
+// Graphics is a local choice, not a room setting: it is about this machine.
+document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => setQuality(b.dataset.q));
 $('#ready').onclick = () => { const mine = lobby.players.find(p => p.pid === me.pid); send({ t: 'ready', v: !(mine && mine.ready) }); };
 $('#start').onclick = () => send({ t: 'start' });
 $('#again').onclick = () => { if (me.host) send({ t: 'again' }); else show('s-lobby'); };
@@ -225,32 +241,44 @@ $('#again').onclick = () => { if (me.host) send({ t: 'again' }); else show('s-lo
 
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' });
 
-// Adaptive quality. A machine that cannot hold 60 fps produces exactly the
-// uneven frame pacing that reads as stutter, so the renderer gives things up
-// until it can. The previous version measured once, decided once, and could
-// only change the resolution — the shadow pass and the lighting, which are
-// most of the cost, stayed on however slow the frame was, and any reduction
-// waited for the NEXT race. This one acts on the race you are in and keeps
-// watching, because the load changes: a grid start is not a lap of Spa.
+// Graphics quality. This is a SETTING, not something the game decides for you
+// while you are driving. An earlier version measured the frame rate and stepped
+// the detail down mid-race with a message on screen; being told your machine is
+// struggling in the middle of a corner is worse than the frame rate was.
+//
+// The level is chosen once, in the lobby, and nothing changes until the next
+// race. `auto` is only a starting guess, made before the first race from what
+// the machine reports about itself, and the player can override it for good.
 const TIERS = [
-  { id: 'low',    shadows: false, env: false, px: 0.7, map: 512,  soft: false, far: 950 },
-  { id: 'medium', shadows: true,  env: true,  px: 1.0, map: 512,  soft: false, far: 1300 },
-  { id: 'high',   shadows: true,  env: true,  px: Math.min(devicePixelRatio, 1.5), map: 1024, soft: false, far: 1650 }
+  { id: 'low',    label: 'Low',    shadows: false, env: false, px: 0.8, map: 512,  far: 1000 },
+  { id: 'medium', label: 'Medium', shadows: true,  env: true,  px: 1.0, map: 512,  far: 1300 },
+  { id: 'high',   label: 'High',   shadows: true,  env: true,  px: Math.min(devicePixelRatio, 1.5), map: 1024, far: 1650 }
 ];
-let tier = TIERS.length - 1;
+
+function guessTier() {
+  // Deliberately crude, and only ever a starting point — the player decides.
+  // It errs low, because a first race at a solid frame rate that you then turn
+  // up is a better first impression than one you have to turn down.
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+  const cores = navigator.hardwareConcurrency || 8;
+  if (mobile || cores <= 4) return 0;
+  if (cores <= 6) return 1;
+  return 2;
+}
+
+let tier = (() => {
+  const saved = localStorage.getItem('apex.quality');
+  const i = TIERS.findIndex(t => t.id === saved);
+  return i >= 0 ? i : guessTier();
+})();
 let quality = TIERS[tier].px;
 renderer.setPixelRatio(quality);
 
-const frameLog = [];
-let tierHold = 0;              // seconds before the next change is allowed
-let logSpan = 0;               // seconds of frames gathered so far
-let tierChanges = 0;           // how many times quality has been stepped
-
-function applyTier(announce) {
+function applyTier() {
   const t = TIERS[tier];
-  QUALITY.level = t.id === 'high' ? 'high' : t.id === 'medium' ? 'high' : 'low';
+  QUALITY.level = t.shadows ? 'high' : 'low';
   renderer.shadowMap.enabled = t.shadows;
-  renderer.shadowMap.type = t.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   if (world && world.sun) {
     world.sun.castShadow = t.shadows;
     if (world.sun.shadow.mapSize.x !== t.map) {
@@ -268,35 +296,22 @@ function applyTier(announce) {
     for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.needsUpdate = true;
   } });
   if (Math.abs(t.px - quality) > 0.01) { quality = t.px; renderer.setPixelRatio(quality); resize(); }
-  // Relinking those shaders costs a frame each, and left to itself the cost is
-  // spread over the next forty as each material is drawn for the first time —
-  // which is a burst of stutter right where the player was already unhappy.
-  // Compiling them all up front pays it once, during the flash message.
+  // Relinking shaders costs a frame each, and left alone that cost is spread
+  // over the next forty as each material is drawn for the first time. Paying it
+  // here, before the race, keeps it out of the driving.
   try { renderer.compile(scene, camera); } catch {}
-  if (announce) flash(tier === 0 ? 'Detail reduced for frame rate'
-                                 : tier === 1 ? 'Detail eased for frame rate'
-                                              : 'Full detail restored');
 }
 
-function paceQuality(dt) {
-  if (tierHold > 0) { tierHold -= dt; return; }
-  // Measured over a span of TIME, not a count of frames. Counting frames means
-  // the slower the machine the longer it takes to notice it is slow: at 4 fps a
-  // 110-frame window is half a minute, so the one machine that needed help most
-  // never got any.
-  frameLog.push(dt);
-  logSpan += dt;
-  if (frameLog.length < 12 || logSpan < 1.5) return;
-  frameLog.sort((a, b) => a - b);
-  const median = frameLog[frameLog.length >> 1];
-  frameLog.length = 0;
-  logSpan = 0;
-  // 22 ms is the point where 60 fps is clearly not happening; 12 ms means
-  // there is room to spare. The gap between them stops it oscillating.
-  if (median > 0.022 && tier > 0) { tier--; applyTier(true); tierHold = 6; tierChanges++; }
-  else if (median < 0.012 && tier < TIERS.length - 1) { tier++; applyTier(true); tierHold = 10; tierChanges++; }
-  else tierHold = 2;
+function setQuality(id) {
+  const i = TIERS.findIndex(t => t.id === id);
+  if (i < 0) return;
+  tier = i;
+  try { localStorage.setItem('apex.quality', id); } catch {}
+  applyTier();
+  document.querySelectorAll('[data-q]').forEach(b => b.classList.toggle('on', b.dataset.q === id));
 }
+// show the starting level on the lobby buttons; the renderer is already built
+document.querySelectorAll('[data-q]').forEach(b => b.classList.toggle('on', b.dataset.q === TIERS[tier].id));
 
 // Physically-based shading with filmic tone mapping, rather than flat colours:
 // this is what stops the world reading as untextured blocks.
@@ -359,13 +374,12 @@ const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault(); });
 addEventListener('keyup', e => { keys[e.code] = false; });
 let pitLatch = 0;
-let reverseHeld = false;   // shift+R latches reverse gear for the keyboard
+let penaltyReason = '';    // what the last steward's note was about
 addEventListener('keydown', e => {
   if (!racing) return;
   if (e.code === 'KeyR') send({ t: 'recover' });
   if (e.code === 'KeyC') cycleView();
   if (e.code === 'KeyP') { pitLatch = 1; flash('Pit requested'); }
-  if (e.code === 'KeyR' && e.shiftKey) { reverseHeld = !reverseHeld; flash(reverseHeld ? 'Reverse engaged' : 'Reverse off'); }
   if (e.code === 'Escape') retire();
 });
 
@@ -400,8 +414,7 @@ function readKeys() {
   return {
     s: (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0),
     g: (keys.ArrowUp || keys.KeyW) ? 1 : 0,
-    b: (keys.ArrowDown || keys.KeyS || keys.Space) ? 1 : 0,
-    r: reverseHeld ? 1 : 0
+    b: (keys.ArrowDown || keys.KeyS || keys.Space) ? 1 : 0
   };
 }
 
@@ -436,7 +449,7 @@ function stepLocal() {
       // the server like a keypress would; predicting it locally only made the
       // client disagree with the authoritative car for a lap.
       const wantPit = pitLatch || (AUTO && k.pit ? 1 : 0);
-      send({ t: 'in', s: my.input.s, g: my.input.g, b: my.input.b, r: my.input.r || 0, q: my.seq, p: wantPit });
+      send({ t: 'in', s: my.input.s, g: my.input.g, b: my.input.b, q: my.seq, p: wantPit });
       stepCar(built, my.car, { ...my.input, pit: wantPit }, my.drv, TICK, raceClock, null);
     } else {
       stepCar(built, my.car, { ...my.input, pit: pitLatch }, my.drv, TICK, raceClock, null);
@@ -444,7 +457,6 @@ function stepLocal() {
     pitLatch = 0;
   }
 
-  paceQuality(frameDt);
 
   // ease the visual correction out over ~0.3s, frame rate independent
   const k = Math.pow(0.02, dt / 0.3);
@@ -549,7 +561,7 @@ function startRace(m) {
   world = buildWorld(scene, built, getTrack(m.trackId).theme, renderer,
                      m.grid.map(c => DRIVERS.find(x => x.id === c.d) || DRIVERS[0]));
   fx = makeEffects(scene);
-  applyTier(false);              // the new world has to obey the current tier
+  applyTier();                   // the new world has to obey the chosen level
 
   m.grid.forEach((c, i) => {
     const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
@@ -570,12 +582,13 @@ function startRace(m) {
 
   smooth.x = smooth.z = smooth.h = 0;
   lastSector = null;
-  frameLog.length = 0; logSpan = 0; tierHold = 1.5;
   my.prev = { x: my.car.x, z: my.car.z, h: my.car.h };
   acc = 0; lastStep = performance.now();
   camReady = false; lastLap = 0; shake = 0;
   for (const el of $('#sectors').children) { el.textContent = 'S' + (+el.dataset.s + 1); el.className = ''; }
   $('#pitcue').className = '';
+  $('#penalty').className = 'panel';
+  penaltyReason = '';
   show('');
   $('#hud').classList.add('on');
   $('#lapn').textContent = `1/${lapCount}`;
@@ -622,13 +635,17 @@ function showResults(m) {
     const d = DRIVERS.find(x => x.id === r.driverId) || DRIVERS[0];
     const gap = r.time && winner.time && i > 0 ? '+' + fmt(r.time - winner.time)
       : r.time ? fmt(r.time)
-      : r.retired ? (r.reason === 'damage' ? 'DNF' : 'RET')
+      : r.retired ? (r.reason === 'damage' ? 'DNF' : r.reason === 'disqualified' ? 'DSQ' : 'RET')
       : 'DNF';
+    // A penalty added to the race time is shown, because a classification that
+    // hides why one car is behind another is not a classification.
+    const pen = r.penalty > 0.05
+      ? ` <span class="pen">+${r.penalty.toFixed(0)}s</span>` : '';
     return `<tr class="${r.pid === me.pid ? 'me' : ''} ${i < 3 ? 'podium' : ''}">
       <td class="pos">${i + 1}</td>
       <td><span class="sw" style="background:${d.color}"></span><b>${esc(r.name)}</b>${r.bot ? ' <span class="team">AI</span>' : ''}</td>
       <td class="team">${d.team}</td>
-      <td class="t">${gap}</td>
+      <td class="t">${gap}${pen}</td>
       <td class="t">${r.best ? fmt(r.best) : '--'}</td></tr>`;
   }).join('');
   $('#rtitle').textContent = getTrack(m.trackId).name + ' — classification';
@@ -722,7 +739,7 @@ window.__apex = {
   debug: () => {
     const car = carMeshes.get(me.pid);
     return {
-      quality: QUALITY.level, tier: TIERS[tier].id, tierChanges, pixelRatio: quality,
+      quality: QUALITY.level, tier: TIERS[tier].id, pixelRatio: quality,
       shadowsOn: renderer.shadowMap.enabled,
       carCasts: car ? car.mesh.castShadow : null,
       carMaterial: car ? car.mesh.material.type : null,
@@ -736,6 +753,7 @@ window.__apex = {
   viewName: () => viewIdx,
   hide: (name, on = true) => { let n = 0; scene.traverse(o => { if (o.name === name) { o.visible = !on; n++; } }); return n; },
   names: () => scene.children.map(c => c.name || c.type),
+  setq: (id) => { setQuality(id); return TIERS[tier].id; },
   // debug: hang above the start line looking back down the grid
   gridView: (k = 40) => {
     const p = built.line[0];
@@ -743,7 +761,7 @@ window.__apex = {
                 look: [p.x - p.tx * 62, 0, p.z - p.tz * 62] };
     return 'grid';
   },
-  tier: (t) => { if (t != null) { tier = Math.max(0, Math.min(TIERS.length - 1, t)); applyTier(false); tierHold = 1e9; } return TIERS[tier].id; },
+  tier: (t) => { if (t != null) { tier = Math.max(0, Math.min(TIERS.length - 1, t)); applyTier(); } return TIERS[tier].id; },
   fps: (ms = 1800) => new Promise(res => { const d = []; let last = performance.now(), t0 = last;
     const tick = () => { const t = performance.now(); d.push(t - last); last = t;
       if (t - t0 < ms) requestAnimationFrame(tick);
@@ -825,8 +843,12 @@ function render() {
     entry.mesh.rotation.y = h;
     if (pitting && world.pit && world.pit.usable) {
       const pd = world.pit.pd(dist);
-      stops.push({ box: world.crew.boxOf(pd), x, z, h,
-                   phase: 1 - clock / TUNE.pitService, released: clock < 0.45 });
+      // while a time penalty is being served the clock is above the service
+      // time and the crew stay behind the wall, which is the rule
+      if (clock <= TUNE.pitService) {
+        stops.push({ box: world.crew.boxOf(pd), x, z, h,
+                     phase: 1 - clock / TUNE.pitService, released: clock < 0.45 });
+      }
     }
   }
   if (world.crew) world.crew.update(stops, frameDt);
@@ -976,7 +998,7 @@ function hud(snap, speed) {
   const band = Math.min(0.999, speed / top) * 8;
   const gear = Math.max(1, Math.ceil(band));
   const revs = speed < 0.5 ? 0 : band - (gear - 1);
-  $('#gear').textContent = car.pit === 'stopped' ? 'P' : speed < 0.5 ? 'N' : gear;
+  $('#gear').textContent = car.pit === 'stopped' ? 'P' : car.v < -0.4 ? 'R' : speed < 0.5 ? 'N' : gear;
   // green through the band, amber near the top, red on the shift light
   const lit = Math.round(revs * revCells.length);
   const N = revCells.length;
@@ -1050,6 +1072,20 @@ function hud(snap, speed) {
       cue.className = 'on';
       cue.textContent = toEntry < 900 ? `Pit entry in ${Math.round(toEntry)} m · keep left` : 'Pitting this lap';
     } else cue.className = '';
+
+    // outstanding penalty, and how close the car is to the next track-limits one
+    const pen = $('#penalty');
+    const owed = srv ? (srv.pen || 0) : 0;
+    const strikes = srv ? (srv.lim || 0) : 0;
+    if (owed > 0.05) {
+      pen.className = 'panel on';
+      $('#penv').textContent = '+' + owed.toFixed(1) + 's';
+      $('#penr').textContent = (penaltyReason || 'served at your next stop');
+    } else if (strikes % 3 !== 0 && strikes > 0) {
+      pen.className = 'panel on warn';
+      $('#penv').textContent = 'LIMITS ' + (strikes % 3) + '/3';
+      $('#penr').textContent = 'third one is a penalty';
+    } else pen.className = 'panel';
 
     const ends = snap.ends ? Math.max(0, snap.ends - snap.time) : 0;
     $('#ctrlhint').textContent =

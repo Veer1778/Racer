@@ -52,7 +52,7 @@ for (const t of TRACKS) {
         if (c.pit === 'stopped' && Math.abs(pd - pit.boxPd(c.box)) > 9) wrongBox++;
       }
     });
-    separate(cars, DT);
+    separate(cars, DT, null, built.length);
   }
 
   const stops = cars.map(c => c.stops);
