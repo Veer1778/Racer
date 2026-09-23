@@ -79,12 +79,12 @@ export const TEAMS = [
     base: 'Hinwil, CH'
   },
   {
-    id: 'cadillac',
-    name: 'Cadillac',
-    color: '#111111',
-    trim: '#D4AF37',
-    base: 'Fishers, US'
-  }
+  id: 'cadillac',
+  name: 'Cadillac',
+  color: '#A7B0B8',
+  trim: '#D4AF37',
+  base: 'Fishers, US'
+}
 ];
 
 
