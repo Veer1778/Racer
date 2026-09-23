@@ -75,8 +75,9 @@ function handle(m) {
       if (m.pb) flash('Sector ' + (m.i + 1) + ' personal best');
       break;
     case 'crash': {
-      flash(m.closing > 28 ? 'Heavy contact' : 'Contact');
-      shake = Math.min(1, m.closing / 40);
+      flash(m.car ? (m.closing > 26 ? 'Hit' : 'Contact')
+                  : (m.closing > 28 ? 'Heavy contact' : 'Contact'));
+      shake = Math.min(1, m.closing / (m.car ? 30 : 40));
       if (fx && my.car) fx.debris(my.car.x, my.car.z, my.car.h, m.closing, my.drv.color, my.drv.trim);
       break;
     }
@@ -86,13 +87,16 @@ function handle(m) {
       if (m.state === 'stopped') flash('Stopped for tyres');
       if (m.state === 'released') flash('Fresh ' + compound(m.tyre).name.toLowerCase() + 's');
       break;
-    case 'retired':
-      if (m.pid !== me.pid) { flash(m.name + ' retired'); break; }
+    case 'retired': {
+      const why = m.reason === 'damage' ? ' is out — car destroyed' : ' retired';
+      if (m.pid !== me.pid) { flash(m.name + why); break; }
       stopRace();
       show('s-lobby');
-      $('#lobbyerr').textContent = 'You retired from the race.';
-      setTimeout(() => { $('#lobbyerr').textContent = ''; }, 5000);
+      $('#lobbyerr').textContent = m.reason === 'damage'
+        ? 'Your car was destroyed. DNF.' : 'You retired from the race.';
+      setTimeout(() => { $('#lobbyerr').textContent = ''; }, 6000);
       break;
+    }
     case 'recovered': my.history = []; smooth.x = smooth.z = smooth.h = 0; flash('Rejoined the track'); break;
     case 'results': showResults(m); break;
   }
@@ -355,11 +359,13 @@ const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault(); });
 addEventListener('keyup', e => { keys[e.code] = false; });
 let pitLatch = 0;
+let reverseHeld = false;   // shift+R latches reverse gear for the keyboard
 addEventListener('keydown', e => {
   if (!racing) return;
   if (e.code === 'KeyR') send({ t: 'recover' });
   if (e.code === 'KeyC') cycleView();
   if (e.code === 'KeyP') { pitLatch = 1; flash('Pit requested'); }
+  if (e.code === 'KeyR' && e.shiftKey) { reverseHeld = !reverseHeld; flash(reverseHeld ? 'Reverse engaged' : 'Reverse off'); }
   if (e.code === 'Escape') retire();
 });
 
@@ -394,7 +400,8 @@ function readKeys() {
   return {
     s: (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0),
     g: (keys.ArrowUp || keys.KeyW) ? 1 : 0,
-    b: (keys.ArrowDown || keys.KeyS || keys.Space) ? 1 : 0
+    b: (keys.ArrowDown || keys.KeyS || keys.Space) ? 1 : 0,
+    r: reverseHeld ? 1 : 0
   };
 }
 
@@ -429,7 +436,7 @@ function stepLocal() {
       // the server like a keypress would; predicting it locally only made the
       // client disagree with the authoritative car for a lap.
       const wantPit = pitLatch || (AUTO && k.pit ? 1 : 0);
-      send({ t: 'in', s: my.input.s, g: my.input.g, b: my.input.b, q: my.seq, p: wantPit });
+      send({ t: 'in', s: my.input.s, g: my.input.g, b: my.input.b, r: my.input.r || 0, q: my.seq, p: wantPit });
       stepCar(built, my.car, { ...my.input, pit: wantPit }, my.drv, TICK, raceClock, null);
     } else {
       stepCar(built, my.car, { ...my.input, pit: pitLatch }, my.drv, TICK, raceClock, null);
@@ -614,7 +621,9 @@ function showResults(m) {
   $('#rbody').innerHTML = m.results.map((r, i) => {
     const d = DRIVERS.find(x => x.id === r.driverId) || DRIVERS[0];
     const gap = r.time && winner.time && i > 0 ? '+' + fmt(r.time - winner.time)
-      : r.time ? fmt(r.time) : (r.retired ? 'RET' : 'DNF');
+      : r.time ? fmt(r.time)
+      : r.retired ? (r.reason === 'damage' ? 'DNF' : 'RET')
+      : 'DNF';
     return `<tr class="${r.pid === me.pid ? 'me' : ''} ${i < 3 ? 'podium' : ''}">
       <td class="pos">${i + 1}</td>
       <td><span class="sw" style="background:${d.color}"></span><b>${esc(r.name)}</b>${r.bot ? ' <span class="team">AI</span>' : ''}</td>
@@ -679,7 +688,7 @@ function otherCars() {
     if (!o) { o = {}; viewCars.set(ca.id, o); }
     o.id = ca.id; o.n = ca.n; o.d = ca.d; o.bot = ca.bot;
     o.pos = ca.pos; o.lap = ca.lap; o.cur = ca.cur; o.best = ca.best;
-    o.pit = ca.pit; o.dmg = ca.dmg; o.pr = ca.pr; o.off = ca.off; o.fin = ca.fin;
+    o.pit = ca.pit; o.dmg = ca.dmg; o.pr = ca.pr; o.off = ca.off; o.fin = ca.fin; o.ret = ca.ret;
     o.jk = ca.jk || 0; o.pcl = ca.pcl || 0; o.pd = ca.pd || 0;
     o.x = ca.x + (cb.x - ca.x) * t;
     o.z = ca.z + (cb.z - ca.z) * t;
@@ -727,6 +736,13 @@ window.__apex = {
   viewName: () => viewIdx,
   hide: (name, on = true) => { let n = 0; scene.traverse(o => { if (o.name === name) { o.visible = !on; n++; } }); return n; },
   names: () => scene.children.map(c => c.name || c.type),
+  // debug: hang above the start line looking back down the grid
+  gridView: (k = 40) => {
+    const p = built.line[0];
+    freeCam = { pos: [p.x + p.tx * 14 + p.nx * 3, k * 0.55, p.z + p.tz * 14 + p.nz * 3],
+                look: [p.x - p.tx * 62, 0, p.z - p.tz * 62] };
+    return 'grid';
+  },
   tier: (t) => { if (t != null) { tier = Math.max(0, Math.min(TIERS.length - 1, t)); applyTier(false); tierHold = 1e9; } return TIERS[tier].id; },
   fps: (ms = 1800) => new Promise(res => { const d = []; let last = performance.now(), t0 = last;
     const tick = () => { const t = performance.now(); d.push(t - last); last = t;
@@ -920,11 +936,11 @@ function towerRows(n) {
   while (towerPool.length < n) {
     const el = document.createElement('div');
     el.className = 't';
-    const pos = document.createElement('span'); pos.className = 'p';
     const col = document.createElement('span'); col.className = 'c';
+    const pos = document.createElement('span'); pos.className = 'p';
     const name = document.createElement('span'); name.className = 'n';
-    const gap = document.createElement('span'); gap.className = 'n gap';
-    el.append(pos, col, name, gap);
+    const gap = document.createElement('span'); gap.className = 'gap';
+    el.append(col, pos, name, gap);
     host.appendChild(el);
     towerPool.push({ el, pos, col, name, gap, posTxt: null, colTxt: null, nameTxt: null, gapTxt: null });
   }
@@ -936,7 +952,7 @@ function towerRows(n) {
 
 const revCells = (() => {
   const el = $('#revs');
-  el.innerHTML = Array.from({ length: 14 }, () => '<i></i>').join('');
+  el.innerHTML = Array.from({ length: 15 }, () => '<i></i>').join('');
   return [...el.children];
 })();
 
@@ -961,9 +977,11 @@ function hud(snap, speed) {
   const gear = Math.max(1, Math.ceil(band));
   const revs = speed < 0.5 ? 0 : band - (gear - 1);
   $('#gear').textContent = car.pit === 'stopped' ? 'P' : speed < 0.5 ? 'N' : gear;
+  // green through the band, amber near the top, red on the shift light
   const lit = Math.round(revs * revCells.length);
-  for (let i = 0; i < revCells.length; i++) {
-    const want = i < lit ? (i >= revCells.length - 3 ? 'red' : 'lit') : '';
+  const N = revCells.length;
+  for (let i = 0; i < N; i++) {
+    const want = i >= lit ? '' : i >= N - 3 ? 'red' : i >= N - 7 ? 'mid' : 'lit';
     if (revCells[i].className !== want) revCells[i].className = want;
   }
 
@@ -1046,14 +1064,22 @@ function hud(snap, speed) {
     for (let i = 0; i < cars.length; i++) {
       const x = cars[i], row = towerPool[i];
       const d = DRIVERS.find(y => y.id === x.d) || DRIVERS[0];
+      // the leader carries the lap, everyone else the time they are losing
       const behind = (leader.pr || 0) - (x.pr || 0);
-      const gap = x.pos === 1 ? '' : (behind / Math.max(25, speed)).toFixed(1);
-      const cls = 't' + (x.id === me.pid ? ' me' : '') + (x.pit && x.pit !== 'no' ? ' pitting' : '');
+      const gap = x.ret ? 'DNF'
+                : x.pos === 1 ? 'LAP ' + Math.max(1, Math.min(lapCount, (x.lap || 0) + 1))
+                : '+' + (behind / Math.max(25, speed)).toFixed(3);
+      const cls = 't' + (x.id === me.pid ? ' me' : '')
+                      + (x.pit && x.pit !== 'no' ? ' pitting' : '')
+                      + (x.ret ? ' out' : '');
       if (row.el.className !== cls) row.el.className = cls;
       if (row.posTxt !== x.pos) { row.pos.textContent = row.posTxt = x.pos; }
       if (row.colTxt !== d.color) { row.col.style.background = row.colTxt = d.color; }
       if (row.nameTxt !== d.short) { row.name.textContent = row.nameTxt = d.short; }
-      if (row.gapTxt !== gap) { row.gap.textContent = row.gapTxt = gap; }
+      if (row.gapTxt !== gap) {
+        row.gap.textContent = row.gapTxt = gap;
+        row.gap.className = x.pos === 1 && !x.ret ? 'gap lead' : 'gap';
+      }
     }
   }
   stuckFor = (speed < 3 && !car.finished) ? stuckFor + frameDt : 0;
@@ -1075,7 +1101,7 @@ let miniBounds = null, miniTrack = null, miniBase = null;
 function buildMiniBase() {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (const p of built.line) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
-  const pad = 26, s = Math.min((mini.width - pad * 2) / (x1 - x0), (mini.height - pad * 2) / (z1 - z0));
+  const pad = 15, s = Math.min((mini.width - pad * 2) / (x1 - x0), (mini.height - pad * 2) / (z1 - z0));
   miniBounds = { x0, z0, s, pad, w: (x1 - x0) * s, h: (z1 - z0) * s };
   miniTrack = built;
 
@@ -1083,7 +1109,7 @@ function buildMiniBase() {
   miniBase = document.createElement('canvas');
   miniBase.width = mini.width; miniBase.height = mini.height;
   const c = miniBase.getContext('2d');
-  c.lineWidth = 9; c.strokeStyle = 'rgba(255,255,255,.17)'; c.lineJoin = 'round'; c.lineCap = 'round';
+  c.lineWidth = 7; c.strokeStyle = 'rgba(255,255,255,.20)'; c.lineJoin = 'round'; c.lineCap = 'round';
   c.beginPath();
   const step = Math.max(1, Math.round(built.line.length / 160));
   for (let i = 0; i < built.line.length; i += step) {
@@ -1094,7 +1120,7 @@ function buildMiniBase() {
 
   // start line marker
   const s0 = built.line[0];
-  c.strokeStyle = '#e9edf5'; c.lineWidth = 3;
+  c.strokeStyle = '#e9edf5'; c.lineWidth = 2.5;
   c.beginPath();
   c.moveTo(miniX(s0) - s0.nx * 5, miniZ(s0) + s0.nz * 5);
   c.lineTo(miniX(s0) + s0.nx * 5, miniZ(s0) - s0.nz * 5);
@@ -1114,8 +1140,8 @@ function drawMini(snap) {
     if (c.id === me.pid) continue;
     const d = DRIVERS.find(x => x.id === c.d) || DRIVERS[0];
     mctx.fillStyle = d.color;
-    mctx.beginPath(); mctx.arc(miniX(c), miniZ(c), 5, 0, 7); mctx.fill();
+    mctx.beginPath(); mctx.arc(miniX(c), miniZ(c), 3.6, 0, 7); mctx.fill();
   }
   mctx.fillStyle = '#ffd166';
-  mctx.beginPath(); mctx.arc(miniX(my.car), miniZ(my.car), 7.5, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.arc(miniX(my.car), miniZ(my.car), 5.4, 0, 7); mctx.fill();
 }

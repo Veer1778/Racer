@@ -26,7 +26,7 @@ for (const t of TRACKS) {
       if (c.finished) return;
       const drv = driverOf(ids[i % ids.length]);
       const before = c.pit;
-      stepCar(built, c, aiInput(built, c, drv, time, i * 2), drv, DT, time, (kind, d) => {
+      stepCar(built, c, aiInput(built, c, drv, time, i * 2, 1, cars), drv, DT, time, (kind, d) => {
         if (kind === 'lap' && d.lap > LAPS) { c.finished = true; done++; }
       });
       // sim.js already latches one impact per contact in `touching`; counting

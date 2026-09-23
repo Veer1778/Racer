@@ -19,7 +19,7 @@ export const TRACKS = [
     name: 'Sakhir',
     country: 'Bahrain',
     blurb: 'Desert night race. Huge braking zone into turn one, three genuine overtaking spots.',
-    real: true, width: 14, laps: 3, runoff: 15,
+    real: true, width: 17, laps: 3, runoff: 15,
     theme: { sky: '#0e1430', sky2: '#3a2a44', ground: '#c8a06a', ground2: '#b38f5e', asphalt: '#3a3f46', kerb: '#d8443a',
               runoff: '#8a6a42', desert: true, rock: '#9c7b4e', rock2: '#87683f', fence: '#2f3545', night: true },
     points: SAKHIR
@@ -29,7 +29,7 @@ export const TRACKS = [
     name: 'Silverstone',
     country: 'Great Britain',
     blurb: 'Fast, open and flowing. The high-speed sweepers are the whole lap.',
-    real: true, width: 14, laps: 3, runoff: 15,
+    real: true, width: 17, laps: 3, runoff: 15,
     theme: { sky: '#5ba3d9', sky2: '#d9ecf7', ground: '#5c9c45', ground2: '#4f8a3d', asphalt: '#44494f', kerb: '#d8443a',
               runoff: '#6f7580', tree: '#2f6b34', tree2: '#3f8a44', fence: '#39405180' },
     points: SILVERSTONE
@@ -39,7 +39,7 @@ export const TRACKS = [
     name: 'Spa',
     country: 'Belgium',
     blurb: 'Forest classic. Steep uphill left-right, then the longest flat-out run in the game.',
-    real: true, width: 13, laps: 2, runoff: 13,
+    real: true, width: 16, laps: 2, runoff: 13,
     theme: { sky: '#6d8aa6', sky2: '#c3d2de', ground: '#41763c', ground2: '#356032', asphalt: '#40454b', kerb: '#d8443a',
               runoff: '#6b7078', tree: '#27592c', tree2: '#35723a', fence: '#39414f' },
     points: SPA_
@@ -49,7 +49,7 @@ export const TRACKS = [
     name: 'Kestrel Ring',
     country: 'Invented',
     blurb: 'Long straights and heavy braking. Slipstream country.',
-    width: 15, laps: 8, runoff: 7,
+    width: 18, laps: 8, runoff: 7,
     theme: { sky: '#6fb3dd', sky2: '#cfe7f5', ground: '#478a4d', ground2: '#3b7442', asphalt: '#42474e', kerb: '#d8443a',
               runoff: '#70767f', tree: '#2c6b3a', tree2: '#3c8a4a', fence: '#38404e' },
     points: polar([
@@ -64,7 +64,7 @@ export const TRACKS = [
     name: 'Cobalt Bay',
     country: 'Invented',
     blurb: 'Street circuit under lights. Walls close, mistakes expensive.',
-    width: 12, laps: 8, runoff: 4,
+    width: 16, laps: 8, runoff: 4,
     theme: { sky: '#101a2e', sky2: '#32455f', ground: '#2f3847', ground2: '#28303d', asphalt: '#383d44', kerb: '#e8e8e8',
               runoff: '#4a515e', tree: '#2a4a3a', tree2: '#356048', fence: '#38404e', night: true },
     // Authored as r(theta) so the loop can never cross itself, with the main
@@ -168,12 +168,48 @@ export function buildTrack(track, spacing = SPACING) {
   // The clamp has to use the tightest radius nearby, not the radius at this
   // exact sample: clamping each sample independently leaves a zigzag where a
   // hairpin starts, and the zigzag still cuts the corner.
+  // How close the nearest OTHER part of the lap passes. Local radius is not
+  // the only thing that limits how far a barrier can sit from the centreline:
+  // at a hairpin the two legs run within a few tens of metres of each other,
+  // and runoff sized to the radius alone lands on the next piece of road. Only
+  // samples far away along the lap count, or a sample's own neighbours would
+  // always be the nearest thing to it.
+  // What counts as "another part of the lap" is a question of heading, not of
+  // arc length. The two legs of a hairpin can be 35 m apart along the road and
+  // 25 m apart across it, which no distance threshold separates from ordinary
+  // contiguous road. Pointing the other way does.
+  const heading = line.map(p => Math.atan2(p.tx, p.tz));
+  const stride = Math.max(1, Math.round(9 / step));
+  for (let i = 0; i < count; i++) {
+    const a = line[i];
+    let near = Infinity;
+    for (let j = 0; j < count; j += stride) {
+      const d = ((j - i) % count + count) % count;
+      const arc = Math.min(d, count - d) * step;
+      if (arc < 22) continue;                    // immediate neighbours, always close
+      let dh = heading[j] - heading[i];
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      if (arc < 85 && Math.abs(dh) < 1.9) continue;   // still the same stretch of road
+      const dx = line[j].x - a.x, dz = line[j].z - a.z;
+      const s2 = dx * dx + dz * dz;
+      if (s2 < near) near = s2;
+    }
+    a.near = Math.sqrt(near);
+  }
+
   const win = Math.ceil(24 / step);
   const half = track.width / 2;
   for (let i = 0; i < count; i++) {
     let r = line[i].radius;
     for (let k = -win; k <= win; k++) r = Math.min(r, line[((i + k) % count + count) % count].radius);
     line[i].rmin = r;
+    // Nothing may reach more than halfway to the next stretch of road, either
+    // side. Where even that leaves no room for a barrier, there is no barrier:
+    // clamping it to a floor instead is what put one across the track at
+    // Sakhir's hairpin as soon as the circuit was widened.
+    line[i].wallCap = Math.max(half + 1.2, line[i].near / 2 - 1.2);
+    line[i].noWall = line[i].near / 2 - 1.2 < half + 2.5;
     // How far a feature may sit on the inside of this bend. Below the floor
     // there is simply no room for one — the two sides of a hairpin are closer
     // together than the track is wide — and it must be left out rather than
@@ -227,13 +263,17 @@ export function project(built, x, z, hint = -1) {
 // The furthest a feature can sit from the centreline at this sample without the
 // offset curve folding over itself. Only the concave side is limited.
 export function maxOffset(sample, signedOffset) {
-  const d = Math.abs(signedOffset);
+  let d = Math.abs(signedOffset);
+  // the distance to the next stretch of road limits BOTH sides; the corner
+  // radius limits only the side the bend curves towards
+  if (sample.wallCap) d = Math.min(d, sample.wallCap);
   if (Math.sign(signedOffset) !== sample.inner) return d;
   return Math.min(d, sample.innerCap || d);
 }
 
 // True where a feature on this side would have to cut across the track.
 export function noRoom(sample, signedOffset) {
+  if (sample.noWall) return true;             // another leg of the lap is too close
   return Math.sign(signedOffset) === sample.inner && !!sample.noInner;
 }
 

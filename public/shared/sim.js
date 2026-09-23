@@ -27,7 +27,12 @@ export const TUNE = {
   pitService: 3.0,     // seconds stationary in the box
   pitLaneW: 12,        // width of the pit lane road
   pitGap: 4.5,         // metres of separation between the barrier and the lane
-  spinDecay: 1.9
+  spinDecay: 1.9,
+
+  gridBack: 18,        // metres from the line to pole
+  gridStep: 9.5,       // metres between one slot and the next
+  gridStagger: 2.7,    // metres either side of the centreline
+  reverseTop: 11       // m/s, about 40 km/h backwards
 };
 
 export const COMPOUNDS = [
@@ -129,11 +134,11 @@ export function pitGeometry(built) {
 
 export function gridCar(built, i, tyre = 'medium') {
   const L = built.length, N = built.line.length;
-  const back = 18 + i * 11;
+  const back = TUNE.gridBack + i * TUNE.gridStep;
   const d = (L - back + L) % L;
   const idx = Math.max(0, Math.min(N - 1, Math.round(d / built.step)));
   const s = built.line[idx];
-  const lat = (i % 2 === 0 ? 1 : -1) * built.width * 0.22;
+  const lat = (i % 2 === 0 ? 1 : -1) * TUNE.gridStagger;
   return {
     x: s.x + s.nx * lat, z: s.z + s.nz * lat,
     h: Math.atan2(s.tx, s.tz),
@@ -142,8 +147,19 @@ export function gridCar(built, i, tyre = 'medium') {
     off: false, slip: false, hit: 0, impact: 0, touching: false,
     tyre, wear: 0, damage: 0, stops: 0,
     pit: 'no',                 // no | armed | lane | stopped
-    pitClock: 0, pitTyre: 'medium', box: i, served: false, pitCool: 0, jack: 0,
+    pitClock: 0, pitTyre: 'medium', box: i, served: false, pitCool: 0, jack: 0, hitCool: 0,
     sector: 0, sectorStart: 0, sectors: [], bestSectors: []
+  };
+}
+
+// Where grid slot `i` sits: the painted box and the car standing in it are
+// built from this one function, so they can never drift apart.
+export function gridSlot(built, i) {
+  const L = built.length, N = built.line.length;
+  const d = ((L - (TUNE.gridBack + i * TUNE.gridStep)) % L + L) % L;
+  return {
+    sample: built.line[Math.round(d / built.step) % N],
+    lateral: (i % 2 === 0 ? 1 : -1) * TUNE.gridStagger
   };
 }
 
@@ -177,7 +193,7 @@ export function damageSpeed(car) { return 1 - TUNE.damageSpeed * (car.damage || 
 
 // Bot driver: pure pursuit on the racing line, paced by corner radius, and it
 // comes in for tyres when they are gone.
-export function aiInput(built, car, drv, t, seed = 0, skill = 1) {
+export function aiInput(built, car, drv, t, seed = 0, skill = 1, field = null) {
   const line = built.line, N = line.length;
   const v = Math.abs(car.v);
   const here = line[((car.hint % N) + N) % N];
@@ -190,6 +206,25 @@ export function aiInput(built, car, drv, t, seed = 0, skill = 1) {
                     : Math.max(9, Math.min(65, Math.min(10 + v * 0.62, here.radius * 1.1 + 8)));
   const aim = line[((car.hint + Math.round(Ld / built.step)) % N + N) % N];
 
+  // Traffic. Without this a bot drives at the back of whatever is in front of
+  // it at full speed, which with real contact damage means the field destroys
+  // itself on anyone who slows down — a car parked on pole took the whole grid
+  // into the back of it and was written off before it had moved.
+  let gapAhead = Infinity, sideAhead = 0;
+  if (field) {
+    const sh = Math.sin(car.h), ch = Math.cos(car.h);
+    for (let k = 0; k < field.length; k++) {
+      const o = field[k];
+      if (!o || o === car || o.retired) continue;
+      const dx = o.x - car.x, dz = o.z - car.z;
+      const ahead = dx * sh + dz * ch;
+      if (ahead <= 0.5 || ahead > 55) continue;
+      const side = dx * ch - dz * sh;
+      if (Math.abs(side) > 3.4) continue;
+      if (ahead < gapAhead) { gapAhead = ahead; sideAhead = side; }
+    }
+  }
+
   // in the pit lane the car follows the lane road instead of the racing line
   let want;
   if (inLane) {
@@ -197,6 +232,14 @@ export function aiInput(built, car, drv, t, seed = 0, skill = 1) {
     want = pit.centre(Math.min(pdAim, pit.total));
   } else {
     want = Math.sin(t * 0.4 + seed) * built.width * 0.16;
+    // set up a pass rather than sit in the mirrors: pull to whichever side
+    // there is room on, as far as the track allows
+    if (gapAhead < 34) {
+      const edge = built.width / 2 - 2.2;
+      const dir = sideAhead > 0 ? -1 : 1;
+      const lean = dir * edge * Math.min(1, (34 - gapAhead) / 20);
+      want = Math.max(-edge, Math.min(edge, want + lean));
+    }
   }
 
   const tx = aim.x + aim.nx * want, tz = aim.z + aim.nz * want;
@@ -212,6 +255,12 @@ export function aiInput(built, car, drv, t, seed = 0, skill = 1) {
 
   let cap = safeSpeed(built, car.hint, tyreGrip(car, drv),
                       TUNE.topSpeed * drv.top * damageSpeed(car)) * 0.97 * skill;
+  // slow to the speed the remaining gap can absorb, unless there is room to go
+  // around, in which case only close to within a car length
+  if (gapAhead < 55) {
+    const room = Math.max(0, gapAhead - (Math.abs(sideAhead) > 2.2 ? 3.5 : 7));
+    cap = Math.min(cap, Math.sqrt(2 * TUNE.brake * 0.45 * room) + 3);
+  }
   if (car.pit === 'lane') {
     cap = Math.min(cap, TUNE.pitLimit - 1.5);
     const pd = pit.pd(car.prevDist);
@@ -239,9 +288,20 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
 
   if (car.retired) { car.v *= Math.max(0, 1 - 2 * dt); return; }
 
+  // A car with nothing left is out. Damage arrives from walls and from other
+  // cars, so this is the one place that can see the total and end the race for
+  // it, whatever put it there.
+  if ((car.damage || 0) >= 1 && !car.finished) {
+    car.retired = true;
+    car.pit = 'no';
+    fire('dnf', { damage: car.damage });
+    return;
+  }
+
   /* ---- pit state machine ---------------------------------------------- */
   const dNow = car.prevDist;
   if (car.pitCool > 0) car.pitCool -= dt;
+  if (car.hitCool > 0) car.hitCool -= dt;
 
   const pd = pit.usable ? pit.pd(dNow) : 1e9;
   const inWindow = pd <= pit.total;
@@ -346,6 +406,17 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
     if (Math.abs(car.v) > TUNE.pitLimit) { gas = 0; brake = Math.max(brake, 0.55); }
   }
   const power = TUNE.power * drv.accel * (car.off ? 0.75 : 1);
+
+  // Reverse gear. Held, the throttle drives the car backwards at walking pace;
+  // if it is still rolling forwards it brakes to a stop first, so selecting
+  // reverse at speed slows the car rather than throwing it into a spin.
+  if (input.r && !car.finished && car.pit !== 'stopped') {
+    if (car.v > 0.6) { gas = 0; brake = Math.max(brake, 0.65); }
+    else {
+      car.v -= gas * power * 0.45 * Math.max(0, 1 - Math.abs(car.v) / TUNE.reverseTop) * dt;
+      gas = 0;
+    }
+  }
 
   car.v += gas * power * Math.max(0, 1 - Math.abs(car.v) / top) * dt;
   car.v -= brake * TUNE.brake * dt * Math.sign(car.v || 1);
@@ -484,9 +555,16 @@ export function stepCar(built, car, input, drv, dt, raceTime, events) {
 
 /* ------------------------------------------------------------ contacts */
 
-// Car to car: push them apart, trade speed along the contact line and kick both
-// into a slide, so diving down the inside and leaning on someone costs time.
-export function separate(cars, dt = 1 / 60) {
+// Car to car. Two things happen here, and separating them is the whole point.
+//
+// Rubbing — running alongside someone, leaning on them through a corner — is
+// continuous, scaled by dt, and costs speed and grip but no damage. Hitting
+// someone is a single event: it lands once, hard, and it hurts.
+//
+// The old version only had the first. Every impact was divided by dt and
+// spread over the hundreds of ticks a contact lasts, so a 200 km/h rear-ender
+// and a gentle nudge produced the same imperceptible nothing.
+export function separate(cars, dt = 1 / 60, events) {
   for (let i = 0; i < cars.length; i++) {
     for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j];
@@ -500,27 +578,48 @@ export function separate(cars, dt = 1 / 60) {
       a.x -= ux * push; a.z -= uz * push;
       b.x += ux * push; b.z += uz * push;
 
-      const av = { x: Math.sin(a.h) * a.v, z: Math.cos(a.h) * a.v };
-      const bv = { x: Math.sin(b.h) * b.v, z: Math.cos(b.h) * b.v };
-      const closing = (av.x - bv.x) * ux + (av.z - bv.z) * uz;
+      const avx = Math.sin(a.h) * a.v, avz = Math.cos(a.h) * a.v;
+      const bvx = Math.sin(b.h) * b.v, bvz = Math.cos(b.h) * b.v;
+      const closing = (avx - bvx) * ux + (avz - bvz) * uz;
       if (closing <= 0) continue;
 
-      // Everything here is scaled by dt. Two cars rubbing along a straight are
-      // in contact for hundreds of ticks; applying a full impulse on each one
-      // wrote the car off in a fraction of a second.
-      const hit = Math.min(1, closing / 22) * Math.min(1, dt * 9);
-      a.v *= 1 - 0.20 * hit;
-      b.v *= 1 - 0.09 * hit;
+      // How square the hit is: 1 when a car drives straight into another,
+      // near 0 when the two are running parallel and merely touching. A
+      // 300 km/h rear-ender and a 300 km/h side-by-side rub are the same
+      // closing speed and must not be the same accident.
+      const square = Math.abs(Math.sin(a.h) * ux + Math.cos(a.h) * uz);
       const sideA = Math.sin(a.h) * uz - Math.cos(a.h) * ux;
       const sideB = Math.sin(b.h) * uz - Math.cos(b.h) * ux;
-      a.yaw = (a.yaw || 0) + sideA * hit * 1.4;
-      b.yaw = (b.yaw || 0) - sideB * hit * 1.0;
-      if (closing > 11) {                     // rubbing panels is not damage
-        a.damage = Math.min(1, (a.damage || 0) + hit * 0.06);
-        b.damage = Math.min(1, (b.damage || 0) + hit * 0.04);
-      }
+
+      // the rub: continuous, dt-scaled, no damage
+      const rub = Math.min(1, closing / 22) * Math.min(1, dt * 9);
+      a.v *= 1 - 0.20 * rub;
+      b.v *= 1 - 0.09 * rub;
+      a.yaw = (a.yaw || 0) + sideA * rub * 1.4;
+      b.yaw = (b.yaw || 0) - sideB * rub * 1.0;
       a.impact = Math.max(a.impact || 0, closing);
       b.impact = Math.max(b.impact || 0, closing);
+
+      // the hit: once per contact, full force. The cooldown is what keeps it
+      // from firing on every one of the ticks the two cars stay overlapped.
+      const sev = closing * (0.30 + 0.70 * square);
+      if (sev < 7 || (a.hitCool || 0) > 0 || (b.hitCool || 0) > 0) continue;
+      a.hitCool = b.hitCool = 0.45;
+
+      const k = Math.min(1, sev / 30);
+      a.v *= Math.max(0.25, 1 - sev / 46);
+      b.v *= Math.max(0.45, 1 - sev / 110);           // the car in front is shoved along
+      b.v += Math.min(9, sev * 0.22);
+      // A square hit spins the car that caused it and launches the one in
+      // front; a glancing one just unsettles both.
+      // sim.js must stay deterministic, so a dead-square hit picks its spin
+      // direction from the geometry rather than from a random number
+      const kickA = sideA >= 0 ? Math.max(0.3, sideA) : Math.min(-0.3, sideA);
+      a.yaw = (a.yaw || 0) + kickA * k * 2.6;
+      b.yaw = (b.yaw || 0) - sideB * k * 2.0 - (1 - square) * sideB * k * 1.2;
+      a.damage = Math.min(1, (a.damage || 0) + sev / 62);
+      b.damage = Math.min(1, (b.damage || 0) + sev / 125);
+      if (events) events(a, b, sev);
     }
   }
 }

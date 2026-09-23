@@ -136,11 +136,27 @@ function recover(room, p) {
   send(p.ws, { t: 'recovered' });
 }
 
+// One way out of a race, whether the driver pressed the button or the car was
+// written off. Classification keeps retirements, so a DNF still appears on the
+// results sheet in the order the cars got that far.
+function retire(room, p, reason) {
+  if (!p.car || p.car.retired && p.car.finished) return;
+  p.car.retired = true;
+  p.car.finished = true;
+  if (!room.results.some(r => r.pid === p.pid)) {
+    room.results.push({ pid: p.pid, name: p.name, bot: p.bot, driverId: p.driverId,
+                        time: null, best: p.car.best, laps: Math.max(0, p.car.lap),
+                        progress: p.car.progress, retired: true, reason });
+  }
+  broadcast(room, { t: 'retired', pid: p.pid, name: p.name, reason });
+  if (!p.bot) send(p.ws, { t: 'results', results: room.results, trackId: room.trackId });
+}
+
 function tickCar(room, p, dt) {
   const drv = driverOf(p.driverId);
   let input;
   if (p.bot || p.autopilot) {
-    input = aiInput(room.built, p.car, drv, room.raceTime, p.seed || 0, room.aiSkill);
+    input = aiInput(room.built, p.car, drv, room.raceTime, p.seed || 0, room.aiSkill, room.field);
   } else {
     input = { ...p.input, pit: p.pitRequest ? 1 : 0 };
     p.pitRequest = false;
@@ -162,6 +178,7 @@ function tickCar(room, p, dt) {
     if (kind === 'pit' && !p.bot) {
       send(p.ws, { t: 'pitstate', state: data.state, tyre: data.tyre || p.car.tyre });
     }
+    if (kind === 'dnf') { retire(room, p, 'damage'); return; }
     if (kind !== 'lap') return;
     const lap = data.lap;
     if (lap > room.laps && !p.car.finished) {
@@ -230,8 +247,17 @@ setInterval(() => {
         if (left <= 0) { room.state = 'racing'; room.raceTime = 0; broadcast(room, { t: 'go' }); }
       } else if (room.state === 'racing') {
         room.raceTime += TICK;
+        room.field = [...room.players.values()].map(p => p.car).filter(Boolean);
         for (const p of room.players.values()) if (p.car) tickCar(room, p, TICK);
-        separate([...room.players.values()].map(p => p.car).filter(Boolean), TICK);
+        const field = [...room.players.values()].filter(p => p.car);
+        const byCar = new Map(field.map(p => [p.car, p]));
+        separate(field.map(p => p.car), TICK, (ca, cb, sev) => {
+          ca.hit = cb.hit = room.raceTime;
+          for (const c of [ca, cb]) {
+            const p = byCar.get(c);
+            if (p && !p.bot) send(p.ws, { t: 'crash', closing: sev, damage: c.damage, car: true });
+          }
+        });
         const humans = [...room.players.values()].filter(p => !p.bot);
         const allDone = humans.length > 0 && humans.every(p => p.car.finished || p.car.retired);
         const firstDone = room.results.length > 0;
@@ -347,7 +373,7 @@ wss.on('connection', (ws) => {
       }
       case 'in': {
         if (!player) return;
-        player.input = { s: m.s || 0, g: m.g || 0, b: m.b || 0 };
+        player.input = { s: m.s || 0, g: m.g || 0, b: m.b || 0, r: m.r ? 1 : 0 };
         // A pit request is a one-shot event arriving on a stream of state
         // messages: latch it, or the next input frame overwrites it before the
         // physics tick ever sees it.
@@ -396,15 +422,7 @@ wss.on('connection', (ws) => {
       }
       case 'retire': {
         if (!room || !player || !player.car) return;
-        player.car.retired = true;
-        player.car.finished = true;
-        if (!room.results.some(r => r.pid === player.pid)) {
-          room.results.push({ pid: player.pid, name: player.name, bot: false, driverId: player.driverId,
-                              time: null, best: player.car.best, laps: Math.max(0, player.car.lap),
-                              progress: player.car.progress, retired: true });
-        }
-        broadcast(room, { t: 'retired', pid: player.pid, name: player.name });
-        send(player.ws, { t: 'results', results: room.results, trackId: room.trackId });
+        retire(room, player, 'retired');
         break;
       }
       case 'tyre': {

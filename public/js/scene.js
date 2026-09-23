@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { maxOffset, noRoom } from '../shared/tracks.js';
-import { pitGeometry } from '../shared/sim.js';
+import { pitGeometry, gridSlot, TUNE } from '../shared/sim.js';
 
 
 /* ------------------------------------------------------------ materials */
@@ -187,6 +187,86 @@ export function carMesh(geometry) {
   return m;
 }
 
+/* ------------------------------------------------------------- crowd */
+
+// Spectators as one instanced box each: a head-and-shoulders block, tinted per
+// person. A full circuit is a few thousand of them for one draw call, which is
+// what makes a crowd affordable at all.
+function crowdMesh(list) {
+  const n = list.length / 5;
+  const b = new PartBuilder();
+  b.box(0.42, 0.46, 0.3, 0, 0.23, 0, '#ffffff');       // torso
+  b.box(0.24, 0.24, 0.24, 0, 0.58, 0, '#e8d5c0');      // head
+  const mesh = new THREE.InstancedMesh(b.geometry(),
+    surfaceMaterial({ vertexColors: true, roughness: 0.9 }), n);
+  const d = new THREE.Object3D(), col = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    d.position.set(list[i * 5], list[i * 5 + 1], list[i * 5 + 2]);
+    d.rotation.set(0, list[i * 5 + 3] + Math.PI / 2, 0);
+    d.scale.setScalar(0.92 + (i % 7) * 0.03);
+    d.updateMatrix();
+    mesh.setMatrixAt(i, d.matrix);
+    mesh.setColorAt(i, col.set(list[i * 5 + 4]));
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  return mesh;
+}
+
+/* ----------------------------------------------------------- the grid */
+
+// Grid position numbers, painted on the tarmac. One canvas holds all twenty in
+// a 5x4 atlas and every slot is a quad into it, so the whole grid is one
+// texture and one draw call rather than twenty of each.
+function gridNumbers(built) {
+  const COLS = 5, ROWS = 4, CELL = 128;
+  const c = document.createElement('canvas');
+  c.width = COLS * CELL; c.height = ROWS * CELL;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#f2f4f8';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 84px ui-sans-serif, sans-serif';
+  for (let i = 0; i < 20; i++) {
+    const cx = (i % COLS + 0.5) * CELL, cy = ((i / COLS) | 0) * CELL + CELL / 2;
+    ctx.fillText(String(i + 1), cx, cy);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+
+  const pos = [], uv = [];
+  for (let i = 0; i < 20; i++) {
+    const { sample: p, lateral: lat } = gridSlot(built, i);
+    const W = 1.05, D = 1.35, y = 0.05;
+    // corners in track space: across by `o`, along by `a`
+    const at = (o, a) => [p.x + p.tx * a + p.nx * (lat + o), y, p.z + p.tz * a + p.nz * (lat + o)];
+    const A = at(-W, 0.7), B = at(W, 0.7), C = at(W, 0.7 - D * 2), D2 = at(-W, 0.7 - D * 2);
+    pos.push(...A, ...B, ...C, ...A, ...C, ...D2);
+    // The track's normal points LEFT of a driver facing along the tangent, so
+    // the corner at -W is the one on his right and has to take the RIGHT edge
+    // of the glyph. Getting this the other way round paints every number
+    // mirrored, which is not obvious until you read one.
+    const u0 = (i % COLS) / COLS, v1 = 1 - ((i / COLS) | 0) / ROWS;
+    const u1 = u0 + 1 / COLS, v0 = v1 - 1 / ROWS;
+    uv.push(u1, v1, u0, v1, u0, v0, u1, v1, u0, v0, u1, v0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
+  }));
+  m.renderOrder = 1;
+  return m;
+}
+
 /* -------------------------------------------------------------- scenery */
 
 function ribbon(line, inner, outer, y, color, closed = true, colorFn = null) {
@@ -346,8 +426,27 @@ function scenery(built, theme) {
     p.z + p.tz * along + p.nz * out
   ];
 
-  for (let k = -24; k <= 14; k++) {
-    const p = built.line[((k * bay) % N + N) % N];
+  // Where the stands go: the main straight, plus any long enough stretch of
+  // reasonably straight road elsewhere, so the circuit is not deserted the
+  // moment you leave the pit straight.
+  const bays = [];
+  for (let k = -24; k <= 14; k++) bays.push(((k * bay) % N + N) % N);
+  for (let i = 0; i < N; i += bay) {
+    const p = built.line[i];
+    if (p.rmin < 120 || bays.includes(i)) continue;
+    if (rng() < 0.62) continue;
+    bays.push(i);
+  }
+
+  // The crowd, chunked alongside the stands. One mesh for the whole circuit is
+  // a single draw call but its bounding sphere covers the entire lap, so it is
+  // never frustum-culled and every spectator behind you is still submitted.
+  let crowd = [];
+  const CROWD = ['#d8dee9', '#e2334a', '#3ddc84', '#ffc46b', '#5b8dd9',
+                 '#b78bd9', '#e7e7e7', '#2b3242'];
+
+  for (const bi of bays) {
+    const p = built.line[bi];
     const ry = Math.atan2(p.tx, p.tz);
 
     // grandstand: base, raked seating, roof on two posts
@@ -356,6 +455,14 @@ function scenery(built, theme) {
     for (let r = 0; r < 5; r++) {
       const s2 = at(p, 0, standOff + 1.2 + r * 1.9, 3.4 + r * 1.25);
       gs.box(2.1, 1.25, 16.4, s2[0], s2[1], s2[2], r % 2 ? '#93a0bb' : '#63708d', ry);
+      // spectators along this row, sitting on it and facing the circuit
+      if (r % 2) continue;                    // every other row, not every seat
+      for (let c = -7; c <= 7; c++) {
+        if (rng() < 0.30) continue;
+        const seat = at(p, c * 1.08 + (rng() - 0.5) * 0.3,
+                        standOff + 1.2 + r * 1.9 - 0.35, 3.4 + r * 1.25 + 1.02);
+        crowd.push(seat[0], seat[1], seat[2], ry, CROWD[(rng() * CROWD.length) | 0]);
+      }
     }
     const roof = at(p, 0, standOff + 5, 11.4);
     gs.box(15, 0.7, 18, roof[0], roof[1], roof[2], '#dfe4ee', ry);
@@ -363,9 +470,14 @@ function scenery(built, theme) {
       const post = at(p, side * 8, standOff + 10.5, 5.6);
       gs.box(1, 11, 1, post[0], post[1], post[2], '#333c52', ry);
     }
-
+    gsCount++;
+    if (gsCount >= 5) {
+      gsFlush();
+      if (crowd.length) { group.add(crowdMesh(crowd)); crowd = []; }
+    }
   }
   gsFlush();
+  if (crowd.length) group.add(crowdMesh(crowd));
   return group;
 }
 
@@ -985,7 +1097,27 @@ export function buildWorld(scene, built, theme, renderer, teams = []) {
   grid.box(1.2, 9, 1.2, s0.x - s0.nx * G, 4.5, s0.z - s0.nz * G, '#2b3242', ang);
   grid.box(built.width + 7, 1.6, 1.2, s0.x, 9.3, s0.z, '#2b3242', ang);
   grid.box(built.width + 2, 0.9, 0.6, s0.x, 8.2, s0.z, '#e2334a', ang);
+
+  // The grid itself: staggered boxes behind the line, in the same places
+  // gridCar puts the cars, so a car on pole is standing in the box marked 1.
+  // Painted as thin slabs rather than flat quads — two coplanar surfaces a
+  // centimetre apart is what made the track shimmer before.
+  for (let i = 0; i < 20; i++) {
+    const { sample: p, lateral: lat } = gridSlot(built, i);
+    const ry = Math.atan2(p.tx, p.tz);
+    const at = (out, along, y) => [p.x + p.tx * along + p.nx * out, y,
+                                   p.z + p.tz * along + p.nz * out];
+    let q = at(lat, 2.5, 0.03);                        // stage line across the front
+    grid.box(3.0, 0.03, 0.20, q[0], q[1], q[2], '#f2f4f8', ry);
+    for (const side of [-1, 1]) {                      // box sides
+      q = at(lat + side * 1.4, 0.1, 0.03);
+      grid.box(0.18, 0.03, 5.0, q[0], q[1], q[2], '#f2f4f8', ry);
+    }
+    q = at(lat, -2.3, 0.03);
+    grid.box(3.0, 0.03, 0.16, q[0], q[1], q[2], '#8b93a6', ry);
+  }
   scene.add(grid.mesh());
+  scene.add(gridNumbers(built));
 
   // garages, pit wall, and the signs marking the entry and exit
   if (pit.usable) {

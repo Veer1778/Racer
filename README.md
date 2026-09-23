@@ -41,10 +41,13 @@ to steer, two pads for throttle and brake. "Re-centre tilt" zeroes the steering
 at whatever angle you're holding. "Touch steering" swaps tilt for a drag bar.
 "Rejoin" puts a beached car back on track.
 
-**No phone.** Arrow keys or WASD, space to brake, **R** to rejoin the track.
+**No phone.** Arrow keys or WASD, space to brake, **R** to rejoin the track,
+**shift+R** for reverse gear, **P** for the pits, **C** to change camera.
 
-If tilt steers the wrong way on your handset, the controller has a
-**Steering: normal / inverted** toggle and it remembers the choice. Which axis
+The controller has rocker switches for **reverse** — the throttle pedal turns
+amber and relabels itself, so there is no doubt which way the car is about to
+go — and for **invert**, if tilt steers the wrong way on your handset. It
+remembers both. Which axis
 reads as "roll the phone like a wheel" depends on which way the phone was turned
 into landscape, and not every handset reports that the same way.
 
@@ -77,6 +80,28 @@ Tyre life is tuned so the compound is a real choice on every circuit, roughly:
 
 On a standard race length that is two stops on softs, one on mediums, and none
 on hards at a lasting pace deficit.
+
+## Contact and damage
+
+Two different things happen when cars touch. Running alongside someone and
+leaning on them through a corner is a **rub**: it costs speed and unsettles the
+car, and it costs no damage. Driving into someone is a **hit**: it lands once,
+at full force, and it is scaled by how square the contact was, so a rear-ender
+and a side-by-side brush at the same closing speed are not the same accident.
+
+Damage costs top speed and grip. At 100% the car is out — **DNF**, whether it
+got there against a barrier or against another car. A really big shunt gets
+there in one go.
+
+The bots watch the car in front and will lift, and pull out to pass rather than
+sit in its gearbox. Without that, real contact damage made the field destroy
+itself on anyone who slowed down: a car parked on pole took the whole grid into
+the back of it and was written off before it had moved.
+
+## The grid
+
+Twenty staggered, numbered boxes down the start straight. The painted box and
+the car standing in it come from the same function, so they cannot drift apart.
 
 ## Frame rate
 

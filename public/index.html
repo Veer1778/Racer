@@ -124,87 +124,108 @@
   .pairtext .u{color:#7f8fb0;word-break:break-all;font-size:10px}
 
   /* -------------------------------------------------------------- HUD */
-  #hud{position:fixed;inset:0;pointer-events:none;display:none;z-index:3}
+  /* Laid out like Monoposto: the timing tower runs the full height of the
+     left edge, the circuit outline sits beside its head, and the lap panel
+     and the car cluster stack down the right. */
+  #hud{position:fixed;inset:0;pointer-events:none;display:none;z-index:3;
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
   #hud.on{display:block}
-  .panel{position:absolute;background:linear-gradient(160deg,rgba(7,10,16,.90),rgba(7,10,16,.68));
-    border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(7px)}
+  .panel{position:absolute;background:rgba(6,9,14,.90);border:1px solid rgba(255,255,255,.10);
+    border-radius:7px;backdrop-filter:blur(7px)}
 
-  /* driver tower */
-  #tower{position:absolute;left:14px;top:50%;transform:translateY(-50%);
-    display:flex;flex-direction:column;gap:2px;font-size:11px}
-  #tower .t{display:flex;align-items:center;gap:0;background:rgba(7,10,16,.86);
-    border:1px solid rgba(255,255,255,.07);height:20px}
-  #tower .t.me{border-color:var(--accent);background:rgba(226,51,74,.20)}
-  #tower .t.pitting{opacity:.55}
-  #tower .p{width:20px;text-align:center;font:900 italic 11px/1 ui-monospace,monospace;color:var(--dim)}
-  #tower .c{width:4px;align-self:stretch}
-  #tower .n{padding:0 8px 0 7px;font-weight:800;letter-spacing:.08em;font-size:10px}
-  #tower .gap{margin-left:auto;color:var(--dim)}
-  #tower .t.me .p{color:#fff}
+  /* ---- timing tower, far left, full height ---- */
+  #towerwrap{position:absolute;left:10px;top:10px;bottom:10px;width:172px;
+    background:rgba(4,6,11,.90);border:1px solid rgba(255,255,255,.09);border-radius:8px;
+    display:flex;flex-direction:column;overflow:hidden;backdrop-filter:blur(7px)}
+  #towerhead{flex:none;text-align:center;font:800 11px/1 ui-sans-serif;letter-spacing:.30em;
+    text-transform:uppercase;color:#e7ebf3;padding:9px 0 8px;background:rgba(255,255,255,.05);
+    border-bottom:1px solid rgba(255,255,255,.08)}
+  #towersub{flex:none;display:flex;justify-content:space-between;align-items:center;
+    padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02)}
+  #towersub .k{font:700 9px/1 ui-sans-serif;letter-spacing:.20em;text-transform:uppercase;color:#7c88a0}
+  #lapn{font:900 italic 14px/1 ui-monospace,monospace;color:#fff;margin-left:5px}
+  #towersub .mode{font:800 9px/1 ui-sans-serif;letter-spacing:.22em;color:#9aa6bd}
+  #tower{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:3px 0}
+  #tower .t{display:flex;align-items:center;height:19px;flex:none;padding:0 6px 0 0;
+    border-bottom:1px solid rgba(255,255,255,.035)}
+  #tower .t.me{background:rgba(226,51,74,.22)}
+  #tower .t.pitting{opacity:.5}
+  #tower .t.out{opacity:.34}
+  #tower .c{width:3px;height:13px;border-radius:1px;margin:0 6px 0 5px;flex:none}
+  #tower .p{width:19px;text-align:right;font:800 10px/1 ui-monospace,monospace;color:#69748b;flex:none;
+    margin-right:7px}
+  #tower .n{font:800 11px/1 ui-sans-serif;letter-spacing:.05em;color:#e7ebf3;flex:none;width:36px}
+  #tower .gap{margin-left:auto;font:700 10px/1 ui-monospace,monospace;color:#8b97ae;
+    font-variant-numeric:tabular-nums}
+  #tower .t.me .p,#tower .t.me .gap{color:#fff}
+  #tower .gap.lead{color:#8fe9b0}
 
-  #lap{left:14px;top:18px;padding:7px 14px;display:flex;align-items:baseline;gap:9px;
-       clip-path:polygon(0 0,100% 0,calc(100% - 11px) 100%,0 100%)}
-  #lapn{font:900 italic 18px/1 ui-monospace,monospace}
+  /* ---- circuit outline, beside the tower head ---- */
+  #mini{position:absolute;left:192px;top:10px;width:124px;height:84px;
+    background:rgba(4,6,11,.72);border:1px solid rgba(255,255,255,.08);border-radius:7px}
 
-  /* timing */
-  #timing{position:absolute;right:16px;top:16px;width:186px}
-  .sectors{display:flex;gap:4px;margin-bottom:5px}
-  .sectors span{flex:1;text-align:center;font:800 9px/1 ui-sans-serif;letter-spacing:.18em;
-    padding:5px 0;background:rgba(7,10,16,.86);border:1px solid rgba(255,255,255,.09);color:var(--dim)}
-  .sectors span.ok{color:#8fe9b0;border-color:#1d5c3a;background:rgba(29,92,58,.35)}
-  .sectors span.pb{color:#c9b3ff;border-color:#4b3a86;background:rgba(75,58,134,.4)}
-  .sectors span.now{color:var(--ink);border-color:var(--accent)}
-  .tbox{position:static;padding:9px 12px}
-  .tbox .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:1px 0}
-  .tbox .v{font:800 italic 15px/1.35 ui-monospace,monospace;font-variant-numeric:tabular-nums}
-  .tbox .v.best{color:#b69cff}
-  .tbox .v.small{font-size:11px;color:var(--dim)}
+  /* ---- lap / timing panel, top right ---- */
+  #timing{position:absolute;right:12px;top:12px;width:196px}
+  .sectors{display:flex;gap:3px;margin-bottom:4px}
+  .sectors span{flex:1;text-align:center;font:800 9px/1 ui-monospace,monospace;letter-spacing:.06em;
+    padding:5px 0;background:rgba(6,9,14,.90);border:1px solid rgba(255,255,255,.10);
+    border-radius:4px;color:#7c88a0;font-variant-numeric:tabular-nums}
+  .sectors span.ok{color:#7ef0a8;border-color:#1f6d44;background:rgba(31,109,68,.40)}
+  .sectors span.pb{color:#cbb6ff;border-color:#4e3d8c;background:rgba(78,61,140,.45)}
+  .sectors span.now{color:#fff;border-color:var(--accent)}
+  .tbox{position:static;padding:8px 11px;border-radius:7px}
+  .tbox .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:2px 0}
+  .tbox .label{font:700 8px/1 ui-sans-serif;letter-spacing:.20em;text-transform:uppercase;color:#7c88a0}
+  .tbox .v{font:700 13px/1.25 ui-monospace,monospace;font-variant-numeric:tabular-nums;color:#e7ebf3}
+  .tbox .v.best{color:#cbb6ff}
+  .tbox .v.small{font-size:10px;color:#7c88a0}
   .tbox .v.up{color:#ff8a93}
-  .tbox .v.down{color:#8fe9b0}
+  .tbox .v.down{color:#7ef0a8}
 
-  #mini{position:absolute;right:16px;top:186px;width:186px;height:186px;
-        background:rgba(6,9,14,.9);border:1px solid rgba(255,255,255,.09)}
-
-  /* car cluster */
-  #cluster{right:16px;bottom:16px;width:262px;padding:10px 12px 11px;
-    clip-path:polygon(14px 0,100% 0,100% 100%,0 100%)}
-  .revs{height:7px;display:flex;gap:2px;margin-bottom:9px}
-  .revs i{flex:1;background:#1b2330;transition:background .05s}
-  .revs i.lit{background:var(--accent)}
-  .revs i.red{background:#ff5f6d}
-  .core{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+  /* ---- car cluster, right, under the timing panel ---- */
+  #cluster{right:12px;top:150px;width:196px;padding:9px 11px 10px;border-radius:7px}
+  .revs{height:8px;display:flex;gap:2px;margin-bottom:8px}
+  .revs i{flex:1;border-radius:2px;background:#161d29;transition:background .05s}
+  .revs i.lit{background:#3ddc84}
+  .revs i.mid{background:#ffc46b}
+  .revs i.red{background:#ff4d5e}
+  .core{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .spd{line-height:1}
+  .spd #kph{font:900 italic 34px/.9 ui-monospace,monospace;letter-spacing:-.03em;color:#fff}
+  .spd .u{font:800 8px/1 ui-sans-serif;letter-spacing:.24em;color:#7c88a0;margin-left:3px}
   .gearbox{display:flex;flex-direction:column;align-items:center;line-height:1}
-  .gearbox #gear{font:900 italic 46px/.86 ui-monospace,monospace;color:var(--accent)}
-  .gearbox .label{font-size:8px;margin-top:3px}
-  .spd{text-align:right;line-height:1}
-  .spd #kph{font:900 italic 42px/.9 ui-monospace,monospace;letter-spacing:-.03em}
-  .spd .u{font-size:9px;font-weight:800;letter-spacing:.26em;color:var(--dim);margin-left:4px}
-  .bars{margin-top:9px;display:flex;flex-direction:column;gap:5px}
-  .bar{display:flex;align-items:center;gap:7px}
-  .bar .track{flex:1;height:6px;background:#1b2330;overflow:hidden}
-  .bar .track i{display:block;height:100%;width:100%;background:#3ddc84;transition:width .2s,background .2s}
+  .gearbox #gear{font:900 italic 40px/.86 ui-monospace,monospace;color:var(--accent)}
+  .gearbox .label{font:700 7px/1 ui-sans-serif;letter-spacing:.20em;text-transform:uppercase;
+    color:#7c88a0;margin-top:3px}
+  .bars{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+  .bar{display:flex;align-items:center;gap:6px}
+  .bar .label{font:700 8px/1 ui-sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#7c88a0}
+  .bar .track{flex:1;height:5px;border-radius:3px;background:#161d29;overflow:hidden}
+  .bar .track i{display:block;height:100%;width:100%;background:#3ddc84;border-radius:3px;
+    transition:width .2s,background .2s}
   .bar .track i.dmg{background:#ffc46b;width:0}
-  .tcomp{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;flex:none;
-    font:900 10px/1 ui-sans-serif;color:#0b0e15;background:#ffc46b}
+  .tcomp{width:17px;height:17px;border-radius:50%;display:grid;place-items:center;flex:none;
+    font:900 9px/1 ui-sans-serif;color:#0b0e15;background:#ffc46b}
 
-  #pitcue{position:absolute;left:50%;top:13%;transform:translateX(-50%);display:none;
-    background:rgba(226,51,74,.92);color:#fff;font:800 12px/1 ui-sans-serif;letter-spacing:.18em;
-    text-transform:uppercase;padding:10px 20px;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%)}
+  #pitcue{position:absolute;left:50%;top:12%;transform:translateX(-50%);display:none;
+    background:rgba(226,51,74,.94);color:#fff;font:800 11px/1 ui-sans-serif;letter-spacing:.18em;
+    text-transform:uppercase;padding:9px 18px;border-radius:5px}
   #pitcue.on{display:block}
-  #pitcue.limit{background:rgba(255,196,107,.94);color:#1a1205}
+  #pitcue.limit{background:rgba(255,196,107,.95);color:#1a1205}
 
   #lights{position:absolute;left:50%;top:12%;transform:translateX(-50%);display:flex;gap:14px}
   .light{width:46px;height:46px;border-radius:50%;background:#12161f;border:2px solid #232c3d;transition:.12s}
   .light.on{background:#ff2d3f;border-color:#ff6470;box-shadow:0 0 30px rgba(255,45,63,.75)}
   #go{position:absolute;left:50%;top:23%;transform:translate(-50%,-50%) skewX(var(--skew));
       font:900 italic 88px/1 ui-sans-serif;letter-spacing:.06em;color:var(--good);opacity:0;transition:opacity .22s}
-  #flash{position:absolute;left:50%;top:34%;transform:translateX(-50%);font:800 12px/1 ui-sans-serif;
-    letter-spacing:.24em;text-transform:uppercase;color:var(--warn);opacity:0;transition:opacity .3s;
-    background:rgba(8,11,17,.85);padding:9px 18px;border:1px solid rgba(255,196,107,.3)}
-  #ctrlhint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:10px;font-weight:700;
-    letter-spacing:.16em;text-transform:uppercase;color:var(--dim);background:rgba(8,11,17,.8);
-    border:1px solid rgba(255,255,255,.08);padding:7px 16px}
-  #retire{position:absolute;right:16px;top:398px;pointer-events:auto;padding:9px 16px;font-size:11px}
+  #flash{position:absolute;left:50%;top:32%;transform:translateX(-50%);font:800 11px/1 ui-sans-serif;
+    letter-spacing:.22em;text-transform:uppercase;color:var(--warn);opacity:0;transition:opacity .3s;
+    background:rgba(8,11,17,.88);padding:8px 16px;border-radius:5px;border:1px solid rgba(255,196,107,.3)}
+  #ctrlhint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);font:700 9px/1 ui-sans-serif;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--dim);background:rgba(8,11,17,.82);
+    border:1px solid rgba(255,255,255,.08);border-radius:5px;padding:7px 15px}
+  #retire{position:absolute;right:12px;top:308px;pointer-events:auto;padding:8px 14px;font-size:10px;
+    border-radius:6px}
   #retire.armed{background:var(--accent);color:#fff}
 
   /* ---------------------------------------------------------- results */
@@ -319,11 +340,12 @@
 <!-- -------------------------------------------------------------- HUD -->
 <div id="hud">
 
-  <!-- driver tower, down the left edge -->
-  <div id="tower"></div>
-
-  <!-- lap counter -->
-  <div class="panel" id="lap"><span class="label">Lap</span><span id="lapn">1/3</span></div>
+  <!-- timing tower: header, lap strip, then one row per car, down the left edge -->
+  <div id="towerwrap">
+    <div id="towerhead">Apex Online</div>
+    <div id="towersub"><span class="k">Lap<span id="lapn">1/3</span></span><span class="mode">Race</span></div>
+    <div id="tower"></div>
+  </div>
 
   <!-- timing, top right -->
   <div id="timing">
@@ -331,21 +353,21 @@
       <span data-s="0">S1</span><span data-s="1">S2</span><span data-s="2">S3</span>
     </div>
     <div class="panel tbox">
-      <div class="row"><span class="label">Current</span><span class="v" id="tcur">0.00</span></div>
-      <div class="row"><span class="label">Best</span><span class="v best" id="tbest">--.--</span></div>
-      <div class="row"><span class="label">Delta</span><span class="v" id="tdelta">--.--</span></div>
+      <div class="row"><span class="label">Current time</span><span class="v" id="tcur">0.00</span></div>
+      <div class="row"><span class="label">Delta time</span><span class="v" id="tdelta">--.--</span></div>
+      <div class="row"><span class="label">Fastest time</span><span class="v best" id="tbest">--.--</span></div>
       <div class="row"><span class="label">Ping</span><span class="v small" id="ping">--</span></div>
     </div>
   </div>
 
-  <canvas id="mini" width="368" height="368"></canvas>
+  <canvas id="mini" width="248" height="168"></canvas>
 
   <!-- car cluster, bottom right -->
   <div class="panel" id="cluster">
     <div class="revs" id="revs"></div>
     <div class="core">
-      <div class="gearbox"><span id="gear">N</span><span class="label">gear</span></div>
       <div class="spd"><span id="kph">0</span><span class="u">km/h</span></div>
+      <div class="gearbox"><span id="gear">N</span><span class="label">gear</span></div>
     </div>
     <div class="bars">
       <div class="bar"><span class="tcomp" id="tcomp">M</span>

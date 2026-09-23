@@ -18,7 +18,7 @@ for (const t of TRACKS) {
     cars.forEach((c, i) => {
       if (c.finished) return;
       const drv = driverOf(drivers[i]);
-      stepCar(built, c, aiInput(built, c, drv, time, i * 2), drv, DT, time, (kind, data) => {
+      stepCar(built, c, aiInput(built, c, drv, time, i * 2, 1, cars), drv, DT, time, (kind, data) => {
         if (kind === 'lap' && data.lap > LAPS && !c.finished) {
           c.finished = true; c.finishT = time;
           done.push({ i, time, best: c.best, laps: c.lapTimes });
